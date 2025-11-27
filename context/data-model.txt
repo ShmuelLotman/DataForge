@@ -1,0 +1,132 @@
+1. Data model (updated)
+   datasets
+
+Created and managed by the user.
+
+id
+
+user_id
+
+name (e.g. “Store A – Weekly Sales”)
+
+description (optional)
+
+canonical_schema (JSON; schema from the first file added, used for validation/hints)
+
+created_at
+
+files
+
+Each CSV upload is a file that belongs to exactly one dataset.
+
+id
+
+user_id
+
+dataset_id ← chosen by user in the UI
+
+original_filename
+
+display_name (user label)
+
+uploaded_at
+
+column_schema (JSON; inferred column names + types)
+
+schema_fingerprint (string)
+
+optional: period_start, period_end, tags JSONB
+
+data_rows
+
+Fact table with all rows from all files.
+
+id
+
+user_id
+
+dataset_id
+
+file_id
+
+row_number
+
+parsed_date (if applicable)
+
+promoted dimension columns if needed (e.g. item, store, category)
+
+data JSONB
+
+Indexes:
+
+(dataset_id)
+
+(file_id)
+
+(dataset_id, parsed_date)
+
+plus indexes on any promoted dims.
+
+2. Upload flow with dataset selection in the UI
+
+When the user uploads a CSV:
+
+They pick a dataset in the UI:
+
+Select from existing datasets (dropdown: “Store A Weekly Sales”, “Store B Sales”, etc.)
+
+Or create a new dataset on the spot (type name, optional description).
+
+Backend parses the CSV:
+
+Infer column_schema.
+
+Compute schema_fingerprint.
+
+Backend validates against the chosen dataset:
+
+If dataset has no canonical_schema yet (first file):
+
+Save this file’s column_schema as the dataset’s canonical_schema.
+
+If dataset already has canonical_schema:
+
+Compare schemas:
+
+If compatible: proceed.
+
+If incompatible: mark as “schema_mismatch” or reject, depending on how strict you want to be.
+
+Insert into DB:
+
+Create files row with dataset_id.
+
+Insert all rows into data_rows with user_id, dataset_id, file_id, parsed_date, data.
+
+The critical piece: the dataset is chosen by the user at upload time. Schema is only used to warn/validate, not to decide grouping.
+
+3. How visualization works with this setup
+
+Visualization always operates at the dataset level.
+
+User goes to “Datasets” and picks one dataset (e.g. “Store A – Weekly Sales”).
+
+Backend loads:
+
+datasets.canonical_schema (or any file’s column_schema in that dataset).
+
+The list of files for that dataset (e.g. “Week 1”, “Week 2”, … “Week 52”).
+
+Visualization builder UI:
+
+Metrics dropdown from numeric columns in canonical_schema.
+
+Dimensions from categorical/date columns.
+
+Filters for:
+
+File(s) within the dataset (multi-select)
+
+Date range (using parsed_date)
+
+Other dimensions (item, store, etc.)
