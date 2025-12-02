@@ -1,3 +1,4 @@
+import { uuidv4 } from 'better-auth'
 import type { Dataset, DataFile, DataRow, ColumnSchema } from './types'
 
 // In-memory store for demo purposes
@@ -18,11 +19,41 @@ class DataStore {
       name: 'Monthly Sales Report',
       description: 'Sales data across all regions',
       canonicalSchema: [
-        { name: 'date', type: 'date', nullable: false },
-        { name: 'region', type: 'string', nullable: false },
-        { name: 'product', type: 'string', nullable: false },
-        { name: 'sales', type: 'number', nullable: false },
-        { name: 'units', type: 'number', nullable: false },
+        {
+          label: 'date',
+          type: 'date',
+          nullable: false,
+          role: 'dimension',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'region',
+          type: 'string',
+          nullable: false,
+          role: 'dimension',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'product',
+          type: 'string',
+          nullable: false,
+          role: 'dimension',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'sales',
+          type: 'number',
+          nullable: false,
+          role: 'metric',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'units',
+          type: 'number',
+          nullable: false,
+          role: 'metric',
+          id: uuidv4().toString(),
+        },
       ],
       createdAt: new Date('2024-01-15'),
       updatedAt: new Date('2024-03-20'),
@@ -35,11 +66,41 @@ class DataStore {
       name: 'Customer Analytics',
       description: 'Customer behavior and engagement metrics',
       canonicalSchema: [
-        { name: 'customer_id', type: 'string', nullable: false },
-        { name: 'signup_date', type: 'date', nullable: false },
-        { name: 'total_purchases', type: 'number', nullable: false },
-        { name: 'lifetime_value', type: 'number', nullable: false },
-        { name: 'churn_risk', type: 'number', nullable: true },
+        {
+          label: 'customer_id',
+          type: 'string',
+          nullable: false,
+          role: 'dimension',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'signup_date',
+          type: 'date',
+          nullable: false,
+          role: 'dimension',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'total_purchases',
+          type: 'number',
+          nullable: false,
+          role: 'metric',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'lifetime_value',
+          type: 'number',
+          nullable: false,
+          role: 'metric',
+          id: uuidv4().toString(),
+        },
+        {
+          label: 'churn_risk',
+          type: 'number',
+          nullable: true,
+          role: 'metric',
+          id: uuidv4().toString(),
+        },
       ],
       createdAt: new Date('2024-02-01'),
       updatedAt: new Date('2024-03-18'),
@@ -197,7 +258,7 @@ class DataStore {
     schema: ColumnSchema[]
   ): void {
     const existingRows = this.rows.get(datasetId) || []
-    const dateColumn = schema.find((c) => c.type === 'date')?.name
+    const dateColumn = schema.find((c) => c.type === 'date')?.id
 
     const newRows: DataRow[] = data.map((row, index) => ({
       id: `row-${fileId}-${index}`,
