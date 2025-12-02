@@ -172,7 +172,7 @@ export function DatasetSelector({
                 <p className="text-xs text-muted-foreground mt-1">
                   Schema:{' '}
                   {selectedDataset.canonicalSchema
-                    .map((c) => c.name)
+                    .map((c) => c.label)
                     .join(', ')}
                 </p>
               )}
