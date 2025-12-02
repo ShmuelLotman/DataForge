@@ -4,69 +4,69 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Deep Void Theme */
-  --background: oklch(0.1 0.02 260);
-  --foreground: oklch(0.98 0.01 260);
+  /* Light Theme */
+  --background: oklch(0.99 0.01 260);
+  --foreground: oklch(0.15 0.02 260);
 
-  --card: oklch(0.14 0.03 260);
-  --card-foreground: oklch(0.98 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.02 260);
 
-  --popover: oklch(0.12 0.03 260);
-  --popover-foreground: oklch(0.98 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.02 260);
 
-  --primary: oklch(0.65 0.22 260); /* Electric Indigo */
-  --primary-foreground: oklch(0.98 0.01 260);
+  --primary: oklch(0.55 0.22 260); /* Electric Indigo - darker for light mode */
+  --primary-foreground: oklch(0.99 0.01 260);
 
-  --secondary: oklch(0.25 0.05 260);
-  --secondary-foreground: oklch(0.9 0.02 260);
+  --secondary: oklch(0.96 0.01 260);
+  --secondary-foreground: oklch(0.2 0.02 260);
 
-  --muted: oklch(0.2 0.03 260);
-  --muted-foreground: oklch(0.7 0.02 260);
+  --muted: oklch(0.95 0.01 260);
+  --muted-foreground: oklch(0.45 0.02 260);
 
-  --accent: oklch(0.7 0.18 190); /* Cyan/Teal Accent */
-  --accent-foreground: oklch(0.1 0.02 260);
+  --accent: oklch(0.6 0.18 190); /* Cyan/Teal Accent */
+  --accent-foreground: oklch(0.99 0.01 260);
 
-  --destructive: oklch(0.6 0.2 20);
-  --destructive-foreground: oklch(0.98 0.01 260);
+  --destructive: oklch(0.55 0.2 20);
+  --destructive-foreground: oklch(0.99 0.01 260);
 
-  --border: oklch(0.25 0.05 260);
-  --input: oklch(0.2 0.03 260);
-  --ring: oklch(0.65 0.22 260);
+  --border: oklch(0.9 0.01 260);
+  --input: oklch(0.95 0.01 260);
+  --ring: oklch(0.55 0.22 260);
 
   /* Chart Colors - Vibrant & Distinct */
-  --chart-1: oklch(0.65 0.22 260); /* Indigo */
-  --chart-2: oklch(0.7 0.18 190); /* Cyan */
-  --chart-3: oklch(0.75 0.18 150); /* Green */
-  --chart-4: oklch(0.8 0.15 80); /* Orange */
-  --chart-5: oklch(0.7 0.2 320); /* Pink */
+  --chart-1: oklch(0.55 0.22 260); /* Indigo */
+  --chart-2: oklch(0.6 0.18 190); /* Cyan */
+  --chart-3: oklch(0.65 0.18 150); /* Green */
+  --chart-4: oklch(0.7 0.15 80); /* Orange */
+  --chart-5: oklch(0.6 0.2 320); /* Pink */
 
   --radius: 0.75rem;
 
-  --sidebar: oklch(0.08 0.02 260);
-  --sidebar-foreground: oklch(0.98 0.01 260);
-  --sidebar-primary: oklch(0.65 0.22 260);
-  --sidebar-primary-foreground: oklch(0.98 0.01 260);
-  --sidebar-accent: oklch(0.2 0.03 260);
-  --sidebar-accent-foreground: oklch(0.98 0.01 260);
-  --sidebar-border: oklch(0.25 0.05 260);
-  --sidebar-ring: oklch(0.65 0.22 260);
+  --sidebar: oklch(0.98 0.01 260);
+  --sidebar-foreground: oklch(0.15 0.02 260);
+  --sidebar-primary: oklch(0.55 0.22 260);
+  --sidebar-primary-foreground: oklch(0.99 0.01 260);
+  --sidebar-accent: oklch(0.95 0.01 260);
+  --sidebar-accent-foreground: oklch(0.15 0.02 260);
+  --sidebar-border: oklch(0.9 0.01 260);
+  --sidebar-ring: oklch(0.55 0.22 260);
 }
 
 .dark {
-  /* Same as root for now, enforcing dark mode */
+  /* Deep Void Dark Theme */
   --background: oklch(0.1 0.02 260);
   --foreground: oklch(0.98 0.01 260);
   --card: oklch(0.14 0.03 260);
   --card-foreground: oklch(0.98 0.01 260);
   --popover: oklch(0.12 0.03 260);
   --popover-foreground: oklch(0.98 0.01 260);
-  --primary: oklch(0.65 0.22 260);
+  --primary: oklch(0.65 0.22 260); /* Electric Indigo */
   --primary-foreground: oklch(0.98 0.01 260);
   --secondary: oklch(0.25 0.05 260);
   --secondary-foreground: oklch(0.9 0.02 260);
   --muted: oklch(0.2 0.03 260);
   --muted-foreground: oklch(0.7 0.02 260);
-  --accent: oklch(0.7 0.18 190);
+  --accent: oklch(0.7 0.18 190); /* Cyan/Teal Accent */
   --accent-foreground: oklch(0.1 0.02 260);
   --destructive: oklch(0.6 0.2 20);
   --destructive-foreground: oklch(0.98 0.01 260);
@@ -143,11 +143,20 @@
 .grid-pattern {
   background-image: linear-gradient(
       to right,
+      oklch(0.9 0.01 260 / 0.3) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, oklch(0.9 0.01 260 / 0.3) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.dark .grid-pattern {
+  background-image: linear-gradient(
+      to right,
       oklch(0.28 0.01 260 / 0.3) 1px,
       transparent 1px
     ),
     linear-gradient(to bottom, oklch(0.28 0.01 260 / 0.3) 1px, transparent 1px);
-  background-size: 40px 40px;
 }
 
 /* Glow effects */
@@ -156,7 +165,11 @@
 }
 
 .glow-card {
-  box-shadow: 0 0 0 1px oklch(0.28 0.01 260), 0 8px 40px oklch(0 0 0 / 0.3);
+  box-shadow: 0 0 0 1px var(--border), 0 8px 40px oklch(0 0 0 / 0.1);
+}
+
+.dark .glow-card {
+  box-shadow: 0 0 0 1px var(--border), 0 8px 40px oklch(0 0 0 / 0.3);
 }
 
 /* Animate gradient */
