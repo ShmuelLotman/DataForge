@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import { toast } from 'sonner'
 
 interface UploadedFile {
   id: string
@@ -113,6 +114,10 @@ export function FileUploadZone({
           method: 'POST',
           body: formData,
         })
+
+        if (response.status === 401) {
+          throw new Error('Please sign in to upload files')
+        }
 
         if (!response.ok) {
           const error = await response.json()

@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
 import type { Dataset, DataFile, DataRow } from './types'
 
-export async function getDatasets(): Promise<Dataset[]> {
-  // Get datasets with file and row counts
+export async function getDatasets(userId: string): Promise<Dataset[]> {
+  // Get datasets with file and row counts, filtered by user
   const { data, error } = await supabase
     .from('datasets')
     .select(
@@ -12,6 +12,7 @@ export async function getDatasets(): Promise<Dataset[]> {
       data_rows:data_rows(count)
     `
     )
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -28,8 +29,11 @@ export async function getDatasets(): Promise<Dataset[]> {
   }))
 }
 
-export async function getDataset(id: string): Promise<Dataset | null> {
-  const { data, error } = await supabase
+export async function getDataset(
+  id: string,
+  userId?: string
+): Promise<Dataset | null> {
+  let query = supabase
     .from('datasets')
     .select(
       `
@@ -39,7 +43,13 @@ export async function getDataset(id: string): Promise<Dataset | null> {
     `
     )
     .eq('id', id)
-    .single()
+
+  // If userId provided, verify ownership
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { data, error } = await query.single()
 
   if (error) return null
 
@@ -59,7 +69,8 @@ export async function createDataset(
   dataset: Omit<
     Dataset,
     'id' | 'createdAt' | 'updatedAt' | 'fileCount' | 'rowCount'
-  >
+  >,
+  userId: string
 ): Promise<Dataset> {
   const { data, error } = await supabase
     .from('datasets')
@@ -67,6 +78,7 @@ export async function createDataset(
       name: dataset.name,
       description: dataset.description,
       canonical_schema: dataset.canonicalSchema,
+      user_id: userId,
     })
     .select()
     .single()
@@ -151,7 +163,8 @@ export async function addRows(
 
 export async function updateDataset(
   id: string,
-  updates: Partial<Dataset>
+  updates: Partial<Dataset>,
+  userId: string
 ): Promise<void> {
   const { error } = await supabase
     .from('datasets')
@@ -160,6 +173,7 @@ export async function updateDataset(
       updated_at: new Date(),
     })
     .eq('id', id)
+    .eq('user_id', userId)
 
   if (error) throw error
 }
@@ -237,7 +251,16 @@ export async function getAggregatedData(
   }))
 }
 
-export async function getFiles(datasetId: string): Promise<DataFile[]> {
+export async function getFiles(
+  datasetId: string,
+  userId: string
+): Promise<DataFile[]> {
+  // First verify the dataset belongs to the user
+  const dataset = await getDataset(datasetId, userId)
+  if (!dataset) {
+    throw new Error('Dataset not found or access denied')
+  }
+
   const { data, error } = await supabase
     .from('files')
     .select('*')
@@ -248,15 +271,20 @@ export async function getFiles(datasetId: string): Promise<DataFile[]> {
   return data.map(mapFile)
 }
 
-export async function deleteDataset(id: string): Promise<void> {
-  const { error } = await supabase.from('datasets').delete().eq('id', id)
+export async function deleteDataset(id: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('datasets')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
 
   if (error) throw error
 }
 
 export async function updateDatasetDetails(
   id: string,
-  updates: { name?: string; description?: string }
+  updates: { name?: string; description?: string },
+  userId: string
 ): Promise<Dataset> {
   const { data, error } = await supabase
     .from('datasets')
@@ -266,6 +294,7 @@ export async function updateDatasetDetails(
       updated_at: new Date(),
     })
     .eq('id', id)
+    .eq('user_id', userId)
     .select()
     .single()
 

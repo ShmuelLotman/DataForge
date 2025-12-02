@@ -17,8 +17,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
 
 export function DatasetList() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -26,24 +29,48 @@ export function DatasetList() {
   const [createOpen, setCreateOpen] = useState(false)
 
   useEffect(() => {
-    fetchDatasets()
-  }, [])
+    // Only fetch datasets if authenticated
+    if (isAuthenticated && !authLoading) {
+      fetchDatasets()
+    } else if (!authLoading) {
+      setIsLoading(false)
+    }
+  }, [isAuthenticated, authLoading])
 
   const fetchDatasets = async () => {
     setIsLoading(true)
     try {
       const res = await fetch('/api/datasets')
+      if (!res.ok) {
+        throw new Error('Failed to fetch datasets')
+      }
       const data = await res.json()
       setDatasets(data)
+    } catch (error) {
+      console.error('Error fetching datasets:', error)
+      toast.error('Failed to load datasets')
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/datasets/${id}`, { method: 'DELETE' })
-    setDatasets(datasets.filter((d) => d.id !== id))
-    setDeleteId(null)
+    try {
+      const res = await fetch(`/api/datasets/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        throw new Error('Failed to delete dataset')
+      }
+      setDatasets(datasets.filter((d) => d.id !== id))
+      setDeleteId(null)
+      toast.success('Dataset deleted successfully')
+    } catch (error) {
+      console.error('Error deleting dataset:', error)
+      toast.error('Failed to delete dataset')
+    }
+  }
+
+  const handleCreateClick = () => {
+    setCreateOpen(true)
   }
 
   const filteredDatasets = datasets.filter(
@@ -66,7 +93,7 @@ export function DatasetList() {
         </div>
 
         <Button
-          onClick={() => setCreateOpen(true)}
+          onClick={handleCreateClick}
           className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -118,10 +145,9 @@ export function DatasetList() {
           </div>
           <h3 className="text-xl font-semibold mb-2">No datasets yet</h3>
           <p className="text-muted-foreground text-center max-w-sm mb-6">
-            Create your first dataset to start organizing and visualizing your
-            CSV data
+            Create your first dataset to start organizing and visualizing your CSV data
           </p>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={handleCreateClick}>
             <Plus className="h-4 w-4 mr-2" />
             Create Dataset
           </Button>

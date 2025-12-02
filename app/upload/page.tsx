@@ -8,6 +8,7 @@ import { DatasetSelector } from '@/components/upload/dataset-selector'
 import { ArrowLeft, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { AuthGuard } from '@/components/auth/auth-guard'
 
 function UploadContent() {
   const searchParams = useSearchParams()
@@ -72,24 +73,26 @@ function UploadContent() {
 
 export default function UploadPage() {
   return (
-    <div className="min-h-screen bg-background">
-      {/* Background Pattern */}
-      <div className="fixed inset-0 grid-pattern opacity-50 pointer-events-none" />
+    <AuthGuard>
+      <div className="min-h-screen bg-background">
+        {/* Background Pattern */}
+        <div className="fixed inset-0 grid-pattern opacity-50 pointer-events-none" />
 
-      {/* Gradient Orbs */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/10 rounded-full blur-3xl opacity-20 pointer-events-none" />
+        {/* Gradient Orbs */}
+        <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/10 rounded-full blur-3xl opacity-20 pointer-events-none" />
 
-      <Navigation />
+        <Navigation />
 
-      <main className="relative pt-24 pb-16 px-6">
-        <Suspense
-          fallback={
-            <div className="mx-auto max-w-4xl animate-pulse h-96 bg-secondary/30 rounded-2xl" />
-          }
-        >
-          <UploadContent />
-        </Suspense>
-      </main>
-    </div>
+        <main className="relative pt-24 pb-16 px-6">
+          <Suspense
+            fallback={
+              <div className="mx-auto max-w-4xl animate-pulse h-96 bg-secondary/30 rounded-2xl" />
+            }
+          >
+            <UploadContent />
+          </Suspense>
+        </main>
+      </div>
+    </AuthGuard>
   )
 }

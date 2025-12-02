@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/select'
 import { Plus, Database, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
 
 interface DatasetSelectorProps {
   value: string | null
@@ -26,6 +28,7 @@ export function DatasetSelector({
   onChange,
   initialDatasetId,
 }: DatasetSelectorProps) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
@@ -33,8 +36,13 @@ export function DatasetSelector({
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    fetchDatasets()
-  }, [])
+    // Only fetch datasets if authenticated
+    if (isAuthenticated && !authLoading) {
+      fetchDatasets()
+    } else if (!authLoading) {
+      setIsLoading(false)
+    }
+  }, [isAuthenticated, authLoading])
 
   useEffect(() => {
     if (initialDatasetId && datasets.length > 0) {
@@ -45,8 +53,18 @@ export function DatasetSelector({
   const fetchDatasets = async () => {
     try {
       const res = await fetch('/api/datasets')
+      if (res.status === 401) {
+        toast.error('Please sign in to view datasets')
+        return
+      }
+      if (!res.ok) {
+        throw new Error('Failed to fetch datasets')
+      }
       const data = await res.json()
       setDatasets(data)
+    } catch (error) {
+      console.error('Error fetching datasets:', error)
+      toast.error('Failed to load datasets')
     } finally {
       setIsLoading(false)
     }
@@ -62,11 +80,29 @@ export function DatasetSelector({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
       })
+
+      if (res.status === 401) {
+        toast.error('Please sign in to create datasets')
+        setIsCreating(false)
+        return
+      }
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || 'Failed to create dataset')
+      }
+
       const dataset = await res.json()
       setDatasets([...datasets, dataset])
       onChange(dataset.id)
       setNewName('')
       setIsCreating(false)
+      toast.success('Dataset created successfully')
+    } catch (error) {
+      console.error('Error creating dataset:', error)
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create dataset'
+      )
     } finally {
       setIsSubmitting(false)
     }

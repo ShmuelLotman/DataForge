@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface CreateDatasetDialogProps {
   open: boolean
@@ -38,15 +39,34 @@ export function CreateDatasetDialog({
 
     setIsLoading(true)
     try {
-      await fetch('/api/datasets', {
+      const res = await fetch('/api/datasets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, description }),
       })
+
+      if (res.status === 401) {
+        toast.error('Please sign in to create datasets')
+        onOpenChange(false)
+        return
+      }
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || 'Failed to create dataset')
+      }
+
+      const dataset = await res.json()
       setName('')
       setDescription('')
       onOpenChange(false)
+      toast.success('Dataset created successfully')
       onCreated?.()
+    } catch (error) {
+      console.error('Error creating dataset:', error)
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create dataset'
+      )
     } finally {
       setIsLoading(false)
     }

@@ -14,26 +14,32 @@ import {
   Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
 
 interface VisualizeClientProps {
   datasetId: string
 }
 
 export function VisualizeClient({ datasetId }: VisualizeClientProps) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [files, setFiles] = useState<DataFile[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/datasets/${datasetId}`).then((r) => r.json()),
-      fetch(`/api/datasets/${datasetId}/files`).then((r) => r.json()),
-    ]).then(([datasetData, filesData]) => {
-      setDataset(datasetData)
-      setFiles(filesData)
-      setIsLoading(false)
-    })
-  }, [datasetId])
+    // Only fetch data if authenticated
+    if (isAuthenticated && !authLoading) {
+      setIsLoading(true)
+      Promise.all([
+        fetch(`/api/datasets/${datasetId}`).then((r) => r.json()),
+        fetch(`/api/datasets/${datasetId}/files`).then((r) => r.json()),
+      ]).then(([datasetData, filesData]) => {
+        setDataset(datasetData)
+        setFiles(filesData)
+        setIsLoading(false)
+      })
+    }
+  }, [datasetId, isAuthenticated, authLoading])
 
   if (isLoading) {
     return (

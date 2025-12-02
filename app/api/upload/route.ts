@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { getDataset, updateDataset, addFile, addRows } from '@/lib/db-actions'
 import { processCSV, validateSchemaCompatibility } from '@/lib/csv-parser'
+import { requireAuth } from '@/lib/auth-server'
 
 export async function POST(request: Request) {
   try {
+    const session = await requireAuth()
     const formData = await request.formData()
     const datasetId = formData.get('datasetId') as string
     const file = formData.get('file') as File
@@ -15,7 +17,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const dataset = await getDataset(datasetId)
+    const dataset = await getDataset(datasetId, session.user.id)
     if (!dataset) {
       return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
     }
@@ -41,7 +43,11 @@ export async function POST(request: Request) {
           }
         } else {
           // Set canonical schema
-          await updateDataset(datasetId, { canonicalSchema: schema })
+          await updateDataset(
+            datasetId,
+            { canonicalSchema: schema },
+            session.user.id
+          )
         }
 
         // Create File Record
@@ -84,6 +90,9 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Upload error:', error)
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Upload failed' },
       { status: 500 }
