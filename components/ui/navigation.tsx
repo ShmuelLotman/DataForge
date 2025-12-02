@@ -4,6 +4,18 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Database, Upload, BarChart3, Settings } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { signOut } from '@/lib/auth-client'
+import { AuthDialog } from '@/components/auth/auth-dialog'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 const navItems = [
   { href: '/', label: 'Datasets', icon: Database },
@@ -13,6 +25,21 @@ const navItems = [
 
 export function Navigation() {
   const pathname = usePathname()
+  const { user, isAuthenticated, isLoading } = useAuth()
+
+  const handleSignOut = async () => {
+    await signOut()
+  }
+
+  const getUserInitials = (name?: string | null) => {
+    if (!name) return 'U'
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
@@ -53,9 +80,49 @@ export function Navigation() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-              <Settings className="h-5 w-5" />
-            </button>
+            {isLoading ? (
+              <div className="h-8 w-8 rounded-full bg-secondary animate-pulse" />
+            ) : isAuthenticated && user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-secondary/50 transition-colors">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                        {getUserInitials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user.name || 'User'}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <button className="w-full cursor-pointer">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </button>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full cursor-pointer text-destructive focus:text-destructive"
+                    >
+                      Sign Out
+                    </button>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <AuthDialog>
+                <Button variant="default" size="sm">
+                  Sign In
+                </Button>
+              </AuthDialog>
+            )}
           </div>
         </div>
       </div>
