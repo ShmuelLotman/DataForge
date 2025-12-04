@@ -31,13 +31,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAddPanelMutation } from '@dataforge/query-hooks'
 
 interface AddPanelDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   dashboardId: string
   dataset: Dataset
-  onAdded?: () => void
 }
 
 const chartTypes: {
@@ -57,14 +57,24 @@ export function AddPanelDialog({
   onOpenChange,
   dashboardId,
   dataset,
-  onAdded,
 }: AddPanelDialogProps) {
   const [title, setTitle] = useState('')
   const [chartType, setChartType] = useState<ChartType>('bar')
   const [xAxis, setXAxis] = useState('')
   const [yAxis, setYAxis] = useState<string[]>([])
   const [groupBy, setGroupBy] = useState<string>('none')
-  const [isSaving, setIsSaving] = useState(false)
+
+  const addPanelMutation = useAddPanelMutation({
+    onSuccess: () => {
+      toast.success('Panel added successfully')
+      resetForm()
+      onOpenChange(false)
+    },
+    onError: (error) => {
+      const errorData = error.response?.data as { error?: string } | undefined
+      toast.error(errorData?.error || error.message || 'Failed to add panel')
+    },
+  })
 
   const schema = dataset.canonicalSchema || []
 
@@ -101,7 +111,7 @@ export function AddPanelDialog({
     }
   }, [chartType, schema])
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!title.trim()) {
       toast.error('Please enter a panel title')
       return
@@ -115,37 +125,14 @@ export function AddPanelDialog({
       return
     }
 
-    setIsSaving(true)
-    try {
-      const config: ChartConfig = {
-        chartType,
-        xAxis,
-        yAxis,
-        groupBy: groupBy !== 'none' ? groupBy : null,
-      }
-
-      const res = await fetch(`/api/dashboards/${dashboardId}/panels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), config }),
-      })
-
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Failed to add panel')
-      }
-
-      toast.success('Panel added successfully')
-      resetForm()
-      onOpenChange(false)
-      onAdded?.()
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to add panel'
-      )
-    } finally {
-      setIsSaving(false)
+    const config: ChartConfig = {
+      chartType,
+      xAxis,
+      yAxis,
+      groupBy: groupBy !== 'none' ? groupBy : null,
     }
+
+    addPanelMutation.mutate({ dashboardId, title: title.trim(), config })
   }
 
   const resetForm = () => {
@@ -297,9 +284,14 @@ export function AddPanelDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving || !title.trim() || !xAxis || yAxis.length === 0}
+            disabled={
+              addPanelMutation.isPending ||
+              !title.trim() ||
+              !xAxis ||
+              yAxis.length === 0
+            }
           >
-            {isSaving ? (
+            {addPanelMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Plus className="h-4 w-4 mr-2" />
@@ -311,4 +303,3 @@ export function AddPanelDialog({
     </Dialog>
   )
 }
-

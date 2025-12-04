@@ -1,7 +1,5 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import type { Dataset, DataFile } from '@/lib/types'
 import { Navigation } from '@/components/ui/navigation'
 import { ChartBuilder } from '@/components/visualize/chart-builder'
 import { Button } from '@/components/ui/button'
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
+import { useDatasetQuery, useDatasetFilesQuery } from '@dataforge/query-hooks'
 
 interface VisualizeClientProps {
   datasetId: string
@@ -22,24 +21,23 @@ interface VisualizeClientProps {
 
 export function VisualizeClient({ datasetId }: VisualizeClientProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
-  const [dataset, setDataset] = useState<Dataset | null>(null)
-  const [files, setFiles] = useState<DataFile[]>([])
-  const [isLoading, setIsLoading] = useState(false)
 
-  useEffect(() => {
-    // Only fetch data if authenticated
-    if (isAuthenticated && !authLoading) {
-      setIsLoading(true)
-      Promise.all([
-        fetch(`/api/datasets/${datasetId}`).then((r) => r.json()),
-        fetch(`/api/datasets/${datasetId}/files`).then((r) => r.json()),
-      ]).then(([datasetData, filesData]) => {
-        setDataset(datasetData)
-        setFiles(filesData)
-        setIsLoading(false)
-      })
-    }
-  }, [datasetId, isAuthenticated, authLoading])
+  // TanStack Query hooks
+  const {
+    data: dataset,
+    isLoading: datasetLoading,
+  } = useDatasetQuery(datasetId, {
+    enabled: isAuthenticated && !authLoading,
+  })
+
+  const {
+    data: files = [],
+    isLoading: filesLoading,
+  } = useDatasetFilesQuery(datasetId, {
+    enabled: isAuthenticated && !authLoading,
+  })
+
+  const isLoading = authLoading || datasetLoading || filesLoading
 
   if (isLoading) {
     return (

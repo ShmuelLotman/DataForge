@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import type { ChartConfig, Dataset, ChartType, DashboardPanel } from '@/lib/types'
+import type {
+  ChartConfig,
+  Dataset,
+  ChartType,
+  DashboardPanel,
+} from '@/lib/types'
 import {
   Dialog,
   DialogContent,
@@ -31,13 +36,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useUpdatePanelMutation } from '@dataforge/query-hooks'
 
 interface EditPanelDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   panel: DashboardPanel
   dataset: Dataset
-  onUpdated?: () => void
 }
 
 const chartTypes: {
@@ -57,14 +62,23 @@ export function EditPanelDialog({
   onOpenChange,
   panel,
   dataset,
-  onUpdated,
 }: EditPanelDialogProps) {
   const [title, setTitle] = useState(panel.title)
   const [chartType, setChartType] = useState<ChartType>(panel.config.chartType)
   const [xAxis, setXAxis] = useState(panel.config.xAxis)
   const [yAxis, setYAxis] = useState<string[]>(panel.config.yAxis)
   const [groupBy, setGroupBy] = useState<string>(panel.config.groupBy || 'none')
-  const [isSaving, setIsSaving] = useState(false)
+
+  const updatePanelMutation = useUpdatePanelMutation({
+    onSuccess: () => {
+      toast.success('Panel updated successfully')
+      onOpenChange(false)
+    },
+    onError: (error) => {
+      const errorData = error.response?.data as { error?: string } | undefined
+      toast.error(errorData?.error || error.message || 'Failed to update panel')
+    },
+  })
 
   // Reset form when panel changes
   useEffect(() => {
@@ -110,7 +124,7 @@ export function EditPanelDialog({
     }
   }, [chartType, schema])
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!title.trim()) {
       toast.error('Please enter a panel title')
       return
@@ -124,39 +138,18 @@ export function EditPanelDialog({
       return
     }
 
-    setIsSaving(true)
-    try {
-      const config: ChartConfig = {
-        chartType,
-        xAxis,
-        yAxis,
-        groupBy: groupBy !== 'none' ? groupBy : null,
-      }
-
-      const res = await fetch(
-        `/api/dashboards/${panel.dashboardId}/panels/${panel.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), config }),
-        }
-      )
-
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Failed to update panel')
-      }
-
-      toast.success('Panel updated successfully')
-      onOpenChange(false)
-      onUpdated?.()
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to update panel'
-      )
-    } finally {
-      setIsSaving(false)
+    const config: ChartConfig = {
+      chartType,
+      xAxis,
+      yAxis,
+      groupBy: groupBy !== 'none' ? groupBy : null,
     }
+
+    updatePanelMutation.mutate({
+      dashboardId: panel.dashboardId,
+      panelId: panel.id,
+      data: { title: title.trim(), config },
+    })
   }
 
   const toggleYAxis = (columnId: string) => {
@@ -293,9 +286,14 @@ export function EditPanelDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving || !title.trim() || !xAxis || yAxis.length === 0}
+            disabled={
+              updatePanelMutation.isPending ||
+              !title.trim() ||
+              !xAxis ||
+              yAxis.length === 0
+            }
           >
-            {isSaving ? (
+            {updatePanelMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-2" />
@@ -307,4 +305,3 @@ export function EditPanelDialog({
     </Dialog>
   )
 }
-

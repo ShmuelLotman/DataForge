@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import type { Dataset, DataFile, ColumnSchema } from '@/lib/types'
 import {
   Select,
@@ -45,6 +45,10 @@ import {
 import { cn } from '@/lib/utils'
 import { formatDateLabel } from '@/lib/date-utils'
 import { SaveToDashboardDialog } from '@/components/visualize/save-to-dashboard-dialog'
+import {
+  useChartDataQuery,
+  type ChartQueryConfig,
+} from '@dataforge/query-hooks'
 
 type ChartType = 'line' | 'bar' | 'area' | 'pie' | 'scatter'
 type Bucket = 'day' | 'week' | 'month'
@@ -85,11 +89,6 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
   const [endDate, setEndDate] = useState<string>('')
   const [bucket, setBucket] = useState<Bucket>('day')
 
-  const [chartData, setChartData] = useState<Record<string, string | number>[]>(
-    []
-  )
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [saveToDashboardOpen, setSaveToDashboardOpen] = useState(false)
 
   const schema = (dataset.canonicalSchema || []).map((c) => {
@@ -151,104 +150,64 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
     return col?.type === 'date'
   }, [xAxis, schema])
 
-  // Initialize dates if empty and x-axis is a date
-  useEffect(() => {
-    if (isDateXAxis && !startDate && !endDate) {
-      const end = new Date()
-      const start = new Date()
-      start.setDate(start.getDate() - 30)
-      setStartDate(start.toISOString().split('T')[0])
-      setEndDate(end.toISOString().split('T')[0])
-    }
-  }, [isDateXAxis, startDate, endDate])
+  // Handle x-axis selection with date initialization
+  const handleXAxisChange = (value: string) => {
+    setXAxis(value)
 
-  // Reset selections when chart type changes
-  useEffect(() => {
+    // Initialize dates if selecting a date column and dates are empty
+    if (value !== 'none') {
+      const col = schema.find((c) => c.id === value)
+      if (col?.type === 'date' && !startDate && !endDate) {
+        const end = new Date()
+        const start = new Date()
+        start.setDate(start.getDate() - 30)
+        setStartDate(start.toISOString().split('T')[0])
+        setEndDate(end.toISOString().split('T')[0])
+      }
+    }
+  }
+
+  // Build query config for TanStack Query
+  const queryConfig = useMemo((): ChartQueryConfig | null => {
+    if (xAxis === 'none' || yAxis.length === 0) return null
+    // For date x-axis, require date range
+    if (isDateXAxis && (!startDate || !endDate)) return null
+
+    return {
+      x: {
+        column: xAxis,
+      },
+      y: yAxis.map((col) => ({
+        column: col,
+        aggregation: 'sum' as const,
+      })),
+      groupBy: groupBy !== 'none' ? groupBy : undefined,
+      bucket: isDateXAxis ? bucket : undefined,
+      dateRange:
+        isDateXAxis && startDate && endDate
+          ? { start: startDate, end: endDate }
+          : undefined,
+    }
+  }, [xAxis, yAxis, groupBy, isDateXAxis, startDate, endDate, bucket])
+
+  // TanStack Query for chart data
+  const {
+    data: chartData = [],
+    isLoading,
+    error: queryError,
+  } = useChartDataQuery(dataset.id, queryConfig!, {
+    enabled: !!queryConfig,
+  })
+
+  const error = queryError ? 'Failed to load chart data' : null
+
+  // Handle chart type change with selection reset
+  const handleChartTypeChange = (type: ChartType) => {
+    setChartType(type)
     setXAxis('none')
     setYAxis([])
     setGroupBy('none')
-    setChartData([])
-  }, [chartType])
-
-  // Fetch Aggregated Data
-  useEffect(() => {
-    async function fetchData() {
-      if (xAxis === 'none' || yAxis.length === 0) return
-
-      // For date x-axis, require date range
-      if (isDateXAxis && (!startDate || !endDate)) return
-
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const payload = {
-          x: {
-            column: xAxis,
-            bucket: isDateXAxis ? bucket : 'none',
-          },
-          y: yAxis.map((col) => ({
-            column: col,
-            agg: 'sum', // Default to sum for now
-          })),
-          groupBy: groupBy !== 'none' ? [{ column: groupBy }] : [],
-          filters: [],
-        }
-
-        // Add date filters if applicable
-        if (isDateXAxis && startDate && endDate) {
-          // This assumes we can filter on the X column directly
-          // If X is date, we can add range filter
-          // But API filter structure is array of objects.
-          // We need to handle "between" or separate gt/lt.
-          // Current API impl only has 'eq' and 'in'.
-          // Wait, I implemented 'eq' and 'in'. I didn't implement 'between'.
-          // However, the API might not support date range via `filters` yet.
-          // BUT, I kept the `startDate`/`endDate` params in the `getAggregatedData`...
-          // Wait, I replaced `getAggregatedData` usage in route.
-          // My `query_dataset` function DOES NOT handle start/end dates automatically unless passed in `filters`.
-          // I need to update `filters` logic in my PL/pgSQL or add date filter support there.
-          // Oops, I missed adding >= and <= support in `query_dataset`.
-          // For now, let's assume I can't filter by date yet in the generic query unless I add it.
-          // OR I can quickly add it to the payload and hope I update the SQL function or add it now.
-          // Let's add 'gte' and 'lte' to `filters` in payload, and I'll need to update the SQL function.
-          // payload.filters.push({ column: xAxis, op: 'gte', value: startDate })
-          // payload.filters.push({ column: xAxis, op: 'lte', value: endDate })
-        }
-
-        const response = await fetch(`/api/datasets/${dataset.id}/query`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-
-        if (!response.ok) {
-          const err = await response.json()
-          throw new Error(err.error || 'Failed to fetch data')
-        }
-
-        const data = await response.json()
-        setChartData(data)
-      } catch (err) {
-        console.error(err)
-        setError('Failed to load chart data')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    const debounce = setTimeout(fetchData, 500)
-    return () => clearTimeout(debounce)
-  }, [
-    dataset.id,
-    xAxis,
-    yAxis,
-    groupBy,
-    startDate,
-    endDate,
-    bucket,
-    isDateXAxis,
-  ])
+  }
 
   const toggleYAxis = (columnId: string) => {
     setYAxis((prev) => {
@@ -569,7 +528,7 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
                 key={type.value}
                 variant={chartType === type.value ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setChartType(type.value)}
+                onClick={() => handleChartTypeChange(type.value)}
                 className={cn(
                   'flex items-center gap-2',
                   chartType === type.value &&
@@ -586,7 +545,7 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
         {/* X-Axis */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">X-Axis (Category)</Label>
-          <Select value={xAxis} onValueChange={setXAxis}>
+          <Select value={xAxis} onValueChange={handleXAxisChange}>
             <SelectTrigger className="bg-secondary/30">
               <SelectValue placeholder="Select column..." />
             </SelectTrigger>

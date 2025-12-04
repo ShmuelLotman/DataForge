@@ -17,59 +17,44 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useCreateDatasetMutation } from '@dataforge/query-hooks'
+import type { AxiosError } from 'axios'
 
 interface CreateDatasetDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreated?: () => void
 }
 
 export function CreateDatasetDialog({
   open,
   onOpenChange,
-  onCreated,
 }: CreateDatasetDialogProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) return
-
-    setIsLoading(true)
-    try {
-      const res = await fetch('/api/datasets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description }),
-      })
-
-      if (res.status === 401) {
-        toast.error('Please sign in to create datasets')
-        onOpenChange(false)
-        return
-      }
-
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Failed to create dataset')
-      }
-
-      const dataset = await res.json()
+  const createDatasetMutation = useCreateDatasetMutation({
+    onSuccess: () => {
       setName('')
       setDescription('')
       onOpenChange(false)
       toast.success('Dataset created successfully')
-      onCreated?.()
-    } catch (error) {
+    },
+    onError: (error: AxiosError<{ error?: string }>) => {
+      if (error.response?.status === 401) {
+        toast.error('Please sign in to create datasets')
+        onOpenChange(false)
+        return
+      }
       console.error('Error creating dataset:', error)
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to create dataset'
-      )
-    } finally {
-      setIsLoading(false)
-    }
+      toast.error(error.response?.data?.error || 'Failed to create dataset')
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+
+    createDatasetMutation.mutate({ name, description })
   }
 
   return (
@@ -116,8 +101,8 @@ export function CreateDatasetDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim() || isLoading}>
-              {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button type="submit" disabled={!name.trim() || createDatasetMutation.isPending}>
+              {createDatasetMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Create Dataset
             </Button>
           </DialogFooter>

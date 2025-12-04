@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import type { DashboardWithPanels, Dataset, DashboardPanel } from '@/lib/types'
+import { useState, useMemo } from 'react'
+import type { DashboardPanel } from '@/lib/types'
 import { Navigation } from '@/components/ui/navigation'
 import { PanelGrid } from '@/components/dashboard/panel-grid'
 import { AddPanelDialog } from '@/components/dashboard/add-panel-dialog'
@@ -30,97 +30,86 @@ import { useParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { ChartRenderer } from '@/components/dashboard/chart-renderer'
+import {
+  useDashboardQuery,
+  useDatasetQuery,
+  useDeletePanelMutation,
+  useChartDataQuery,
+  type ChartQueryConfig,
+} from '@dataforge/query-hooks'
 
 export default function DashboardViewPage() {
   const params = useParams()
   const dashboardId = params.id as string
   const { isAuthenticated, isLoading: authLoading } = useAuth()
 
-  const [dashboard, setDashboard] = useState<DashboardWithPanels | null>(null)
-  const [dataset, setDataset] = useState<Dataset | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [addPanelOpen, setAddPanelOpen] = useState(false)
   const [editingPanel, setEditingPanel] = useState<DashboardPanel | null>(null)
   const [deletingPanelId, setDeletingPanelId] = useState<string | null>(null)
   const [expandedPanel, setExpandedPanel] = useState<DashboardPanel | null>(
     null
   )
-  const [expandedData, setExpandedData] = useState<Record<string, any>[]>([])
 
-  useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      fetchDashboard()
-    } else if (!authLoading) {
-      setIsLoading(false)
+  // TanStack Query for dashboard data
+  const { data: dashboard, isLoading: dashboardLoading } = useDashboardQuery(
+    dashboardId,
+    {
+      enabled: isAuthenticated && !authLoading,
     }
-  }, [dashboardId, isAuthenticated, authLoading])
+  )
 
-  const fetchDashboard = async () => {
-    setIsLoading(true)
-    try {
-      const res = await fetch(`/api/dashboards/${dashboardId}`)
-      if (!res.ok) throw new Error('Failed to fetch dashboard')
-      const data: DashboardWithPanels = await res.json()
-      setDashboard(data)
-
-      // Fetch dataset details
-      const datasetRes = await fetch(`/api/datasets/${data.datasetId}`)
-      if (datasetRes.ok) {
-        setDataset(await datasetRes.json())
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard:', error)
-      toast.error('Failed to load dashboard')
-    } finally {
-      setIsLoading(false)
+  // TanStack Query for dataset data
+  const { data: dataset, isLoading: datasetLoading } = useDatasetQuery(
+    dashboard?.datasetId ?? '',
+    {
+      enabled: !!dashboard?.datasetId,
     }
-  }
+  )
 
-  const handleDeletePanel = async () => {
-    if (!deletingPanelId) return
-    try {
-      const res = await fetch(
-        `/api/dashboards/${dashboardId}/panels/${deletingPanelId}`,
-        { method: 'DELETE' }
-      )
-      if (!res.ok) throw new Error('Failed to delete panel')
+  // Delete panel mutation with optimistic updates
+  const deletePanelMutation = useDeletePanelMutation({
+    onSuccess: () => {
       setDeletingPanelId(null)
-      fetchDashboard()
       toast.success('Panel deleted')
-    } catch (error) {
-      console.error('Error deleting panel:', error)
+    },
+    onError: () => {
       toast.error('Failed to delete panel')
-    }
+    },
+  })
+
+  const isLoading = authLoading || dashboardLoading || datasetLoading
+
+  const handleDeletePanel = () => {
+    if (!deletingPanelId) return
+    deletePanelMutation.mutate({ dashboardId, panelId: deletingPanelId })
   }
 
-  const handleExpandPanel = async (panel: DashboardPanel) => {
-    setExpandedPanel(panel)
-    // Fetch data for expanded view
-    try {
-      const response = await fetch(`/api/datasets/${dataset?.id}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          x: {
-            column: panel.config.xAxis,
-            bucket: panel.config.bucket || 'none',
-          },
-          y: panel.config.yAxis.map((col) => ({
-            column: col,
-            agg: panel.config.aggregation || 'sum',
-          })),
-          groupBy: panel.config.groupBy
-            ? [{ column: panel.config.groupBy }]
-            : [],
-          filters: panel.config.filters || [],
-        }),
-      })
-      if (response.ok) {
-        setExpandedData(await response.json())
-      }
-    } catch (error) {
-      console.error('Error fetching expanded panel data:', error)
+  // Query config for expanded panel
+  const expandedQueryConfig = useMemo((): ChartQueryConfig | null => {
+    if (!expandedPanel) return null
+    return {
+      x: { column: expandedPanel.config.xAxis },
+      y: expandedPanel.config.yAxis.map((col) => ({
+        column: col,
+        aggregation: expandedPanel.config.aggregation || 'sum',
+      })),
+      groupBy: expandedPanel.config.groupBy || undefined,
+      bucket: expandedPanel.config.bucket || undefined,
+      filters: expandedPanel.config.filters,
     }
+  }, [expandedPanel])
+
+  // Query for expanded panel data (uses cache if available)
+  const { data: expandedData = [] } = useChartDataQuery(
+    dataset?.id ?? '',
+    expandedQueryConfig!,
+    {
+      enabled: !!expandedPanel && !!dataset?.id && !!expandedQueryConfig,
+    }
+  )
+
+  const handleExpandPanel = (panel: DashboardPanel) => {
+    setExpandedPanel(panel)
   }
 
   if (isLoading) {
@@ -242,7 +231,6 @@ export default function DashboardViewPage() {
           onOpenChange={setAddPanelOpen}
           dashboardId={dashboardId}
           dataset={dataset}
-          onAdded={fetchDashboard}
         />
 
         {/* Edit Panel Dialog */}
@@ -252,7 +240,6 @@ export default function DashboardViewPage() {
             onOpenChange={(open) => !open && setEditingPanel(null)}
             panel={editingPanel}
             dataset={dataset}
-            onUpdated={fetchDashboard}
           />
         )}
 
@@ -285,7 +272,6 @@ export default function DashboardViewPage() {
           open={!!expandedPanel}
           onOpenChange={() => {
             setExpandedPanel(null)
-            setExpandedData([])
           }}
         >
           <DialogContent className="max-w-4xl h-[80vh]">
@@ -307,5 +293,3 @@ export default function DashboardViewPage() {
     </AuthGuard>
   )
 }
-
-

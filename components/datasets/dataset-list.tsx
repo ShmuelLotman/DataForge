@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import type { Dataset } from '@/lib/types'
+import { useState, useMemo } from 'react'
 import { DatasetCard } from './dataset-card'
 import { CreateDatasetDialog } from './create-dataset-dialog'
 import { Button } from '@/components/ui/button'
@@ -19,64 +18,56 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
+import { useDatasetsQuery, useDeleteDatasetMutation } from '@dataforge/query-hooks'
 
 export function DatasetList() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
-  const [datasets, setDatasets] = useState<Dataset[]>([])
   const [search, setSearch] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
-  useEffect(() => {
-    // Only fetch datasets if authenticated
-    if (isAuthenticated && !authLoading) {
-      fetchDatasets()
-    } else if (!authLoading) {
-      setIsLoading(false)
-    }
-  }, [isAuthenticated, authLoading])
+  // TanStack Query hooks
+  const {
+    data: datasets = [],
+    isLoading: datasetsLoading,
+    error: datasetsError,
+  } = useDatasetsQuery(undefined, {
+    enabled: isAuthenticated && !authLoading,
+  })
 
-  const fetchDatasets = async () => {
-    setIsLoading(true)
-    try {
-      const res = await fetch('/api/datasets')
-      if (!res.ok) {
-        throw new Error('Failed to fetch datasets')
-      }
-      const data = await res.json()
-      setDatasets(data)
-    } catch (error) {
-      console.error('Error fetching datasets:', error)
-      toast.error('Failed to load datasets')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    try {
-      const res = await fetch(`/api/datasets/${id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        throw new Error('Failed to delete dataset')
-      }
-      setDatasets(datasets.filter((d) => d.id !== id))
+  const deleteDatasetMutation = useDeleteDatasetMutation({
+    onSuccess: () => {
       setDeleteId(null)
       toast.success('Dataset deleted successfully')
-    } catch (error) {
-      console.error('Error deleting dataset:', error)
+    },
+    onError: () => {
       toast.error('Failed to delete dataset')
-    }
+    },
+  })
+
+  const isLoading = authLoading || datasetsLoading
+
+  // Show error toast when datasets fail to load
+  if (datasetsError && !datasetsLoading) {
+    console.error('Error fetching datasets:', datasetsError)
+  }
+
+  const handleDelete = (id: string) => {
+    deleteDatasetMutation.mutate(id)
   }
 
   const handleCreateClick = () => {
     setCreateOpen(true)
   }
 
-  const filteredDatasets = datasets.filter(
-    (d) =>
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.description?.toLowerCase().includes(search.toLowerCase())
+  const filteredDatasets = useMemo(
+    () =>
+      datasets.filter(
+        (d) =>
+          d.name.toLowerCase().includes(search.toLowerCase()) ||
+          d.description?.toLowerCase().includes(search.toLowerCase())
+      ),
+    [datasets, search]
   )
 
   return (
@@ -158,7 +149,6 @@ export function DatasetList() {
       <CreateDatasetDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={fetchDatasets}
       />
 
       {/* Delete Confirmation */}

@@ -3,6 +3,8 @@ import type { Metadata } from 'next'
 import { Outfit, Manrope } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { QueryProvider } from '@dataforge/query-hooks'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const outfit = Outfit({
@@ -33,14 +35,17 @@ export default function RootLayout({
       <body
         className={`${outfit.variable} ${manrope.variable} font-sans antialiased`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <QueryProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+            <Toaster />
+          </ThemeProvider>
+        </QueryProvider>
         <Analytics />
       </body>
     </html>

@@ -75,10 +75,7 @@ export function PanelGrid({
         {sortedPanels.map((panel, index) => (
           <div
             key={panel.id}
-            style={{ minHeight: `${layout.rowHeight}px` }}
             className="animate-in fade-in slide-in-from-bottom-2"
-            // Staggered animation
-            // @ts-ignore - CSS custom property
             style={{
               minHeight: `${layout.rowHeight}px`,
               animationDelay: `${index * 50}ms`,

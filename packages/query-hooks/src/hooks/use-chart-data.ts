@@ -1,7 +1,4 @@
-import {
-  useQuery,
-  type UseQueryOptions,
-} from '@tanstack/react-query'
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import axios, { AxiosError } from 'axios'
 import { queryKeys } from '../keys'
 import type { ChartConfig } from '@dataforge/types'
@@ -43,7 +40,9 @@ export interface ChartDataPoint {
 /**
  * Convert ChartConfig to query API format
  */
-export function chartConfigToQueryConfig(config: ChartConfig): ChartQueryConfig {
+export function chartConfigToQueryConfig(
+  config: ChartConfig
+): ChartQueryConfig {
   return {
     x: { column: config.xAxis },
     y: config.yAxis.map((col) => ({
@@ -63,7 +62,7 @@ export function chartConfigToQueryConfig(config: ChartConfig): ChartQueryConfig 
 
 /**
  * Execute a chart data query against a dataset
- * 
+ *
  * @example
  * ```tsx
  * // Basic usage
@@ -72,7 +71,7 @@ export function chartConfigToQueryConfig(config: ChartConfig): ChartQueryConfig 
  *   y: [{ column: 'revenue', aggregation: 'sum' }],
  *   bucket: 'month'
  * })
- * 
+ *
  * // Using ChartConfig
  * const queryConfig = chartConfigToQueryConfig(panelConfig)
  * const { data } = useChartDataQuery(datasetId, queryConfig)
@@ -89,13 +88,28 @@ export function useChartDataQuery(
   return useQuery({
     queryKey: queryKeys.chartData.query(datasetId, config),
     queryFn: async () => {
+      // Transform config to match SQL function's expected format
+      // SQL expects: groupBy: [{ column: "name" }], y: [{ column: "x", agg: "sum" }]
+      const apiConfig = {
+        x: {
+          column: config.x.column,
+          bucket: config.bucket,
+        },
+        y: config.y.map((item) => ({
+          column: item.column,
+          agg: item.aggregation || 'sum',
+        })),
+        groupBy: config.groupBy ? [{ column: config.groupBy }] : [],
+        filters: config.filters || [],
+      }
+
       const { data } = await axios.post<ChartDataPoint[]>(
         `/api/datasets/${datasetId}/query`,
-        config
+        apiConfig
       )
       return data
     },
-    enabled: !!datasetId && !!config.x?.column && config.y?.length > 0,
+    enabled: !!datasetId && !!config?.x?.column && config?.y?.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
   })
@@ -103,7 +117,7 @@ export function useChartDataQuery(
 
 /**
  * Hook that directly accepts ChartConfig for convenience
- * 
+ *
  * @example
  * ```tsx
  * const { data, isLoading } = useChartDataFromConfig(datasetId, {

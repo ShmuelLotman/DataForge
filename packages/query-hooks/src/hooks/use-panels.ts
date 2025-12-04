@@ -80,22 +80,41 @@ export function useAddPanelMutation(
       )
       return data
     },
-    onSuccess: (newPanel, variables) => {
-      queryClient.setQueryData(
-        queryKeys.dashboards.detail(variables.dashboardId),
-        (old: DashboardWithPanels | undefined) => {
-          if (!old) return old
-          return {
-            ...old,
-            panels: [...old.panels, newPanel],
-          }
+    onSuccess: (newPanel, variables, context) => {
+      const queryKey = queryKeys.dashboards.detail(variables.dashboardId)
+
+      // 1. Optimistic update for immediate UI feedback
+      queryClient.setQueryData<DashboardWithPanels>(queryKey, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          panels: [...old.panels, newPanel],
         }
-      )
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.dashboards.detail(variables.dashboardId),
       })
+
+      // 2. Invalidate to ensure fresh data from server
+      queryClient.invalidateQueries({
+        queryKey,
+        refetchType: 'active',
+      })
+
+      // 3. Call custom onSuccess AFTER cache operations
+      options?.onSuccess?.(
+        newPanel,
+        variables,
+        context as any,
+        undefined as any
+      )
     },
-    ...options,
+    onError: options?.onError,
+    // Spread other options (excluding onSuccess/onError which are handled above)
+    ...(options
+      ? Object.fromEntries(
+          Object.entries(options).filter(
+            ([key]) => !['onSuccess', 'onError'].includes(key)
+          )
+        )
+      : {}),
   })
 }
 
@@ -133,9 +152,12 @@ export function useUpdatePanelMutation(
       )
       return data
     },
-    onSuccess: (updatedPanel, variables) => {
+    onSuccess: (updatedPanel, variables, context) => {
+      const queryKey = queryKeys.dashboards.detail(variables.dashboardId)
+
+      // Optimistic update
       queryClient.setQueryData(
-        queryKeys.dashboards.detail(variables.dashboardId),
+        queryKey,
         (old: DashboardWithPanels | undefined) => {
           if (!old) return old
           return {
@@ -146,8 +168,30 @@ export function useUpdatePanelMutation(
           }
         }
       )
+
+      // Invalidate to ensure fresh data
+      queryClient.invalidateQueries({
+        queryKey,
+        refetchType: 'active',
+      })
+
+      // Call custom onSuccess if provided
+      options?.onSuccess?.(
+        updatedPanel,
+        variables,
+        context as any,
+        undefined as any
+      )
     },
-    ...options,
+    onError: options?.onError,
+    // Spread other options (excluding onSuccess/onError)
+    ...(options
+      ? Object.fromEntries(
+          Object.entries(options).filter(
+            ([key]) => !['onSuccess', 'onError'].includes(key)
+          )
+        )
+      : {}),
   })
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { ChartConfig, Dashboard, ChartType, BucketType } from '@/lib/types'
 import {
   Dialog,
@@ -22,15 +22,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Loader2,
-  Save,
-  Plus,
-  LayoutDashboard,
-  Sparkles,
-} from 'lucide-react'
+import { Loader2, Save, Plus, LayoutDashboard, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { useDashboardsQuery } from '@dataforge/query-hooks'
 
 interface SaveToDashboardDialogProps {
   open: boolean
@@ -53,8 +48,7 @@ export function SaveToDashboardDialog({
 }: SaveToDashboardDialogProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'existing' | 'new'>('existing')
-  const [dashboards, setDashboards] = useState<Dashboard[]>([])
-  const [isLoadingDashboards, setIsLoadingDashboards] = useState(false)
+
   const [isSaving, setIsSaving] = useState(false)
 
   // Panel title
@@ -68,35 +62,17 @@ export function SaveToDashboardDialog({
   const [newDashboardDescription, setNewDashboardDescription] = useState('')
 
   // Fetch dashboards for this dataset when dialog opens
+  const { data: dashboards = [], isLoading: isLoadingDashboards } =
+    useDashboardsQuery({
+      datasetId,
+    })
+
+  // Auto-switch to new tab if no dashboards exist for this dataset
   useEffect(() => {
-    if (open) {
-      fetchDashboards()
+    if (open && !isLoadingDashboards && dashboards.length === 0) {
+      setActiveTab('new')
     }
-  }, [open, datasetId])
-
-  const fetchDashboards = async () => {
-    setIsLoadingDashboards(true)
-    try {
-      const res = await fetch('/api/dashboards')
-      if (!res.ok) throw new Error('Failed to fetch dashboards')
-      const allDashboards: Dashboard[] = await res.json()
-      // Filter to only dashboards for this dataset
-      const datasetDashboards = allDashboards.filter(
-        (d) => d.datasetId === datasetId
-      )
-      setDashboards(datasetDashboards)
-
-      // Auto-switch to new tab if no dashboards exist for this dataset
-      if (datasetDashboards.length === 0) {
-        setActiveTab('new')
-      }
-    } catch (error) {
-      console.error('Error fetching dashboards:', error)
-      toast.error('Failed to load dashboards')
-    } finally {
-      setIsLoadingDashboards(false)
-    }
-  }
+  }, [open, isLoadingDashboards, dashboards.length])
 
   const handleSave = async () => {
     if (!panelTitle.trim()) {
@@ -353,4 +329,3 @@ export function SaveToDashboardDialog({
     </Dialog>
   )
 }
-

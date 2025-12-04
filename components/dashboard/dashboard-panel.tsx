@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import type { DashboardPanel, Dataset } from '@/lib/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical, Pencil, Trash2, Maximize2, Loader2 } from 'lucide-react'
 import { ChartRenderer } from './chart-renderer'
+import {
+  useChartDataQuery,
+  type ChartQueryConfig,
+} from '@dataforge/query-hooks'
 
 interface DashboardPanelComponentProps {
   panel: DashboardPanel
@@ -28,57 +32,47 @@ export function DashboardPanelComponent({
   onDelete,
   onExpand,
 }: DashboardPanelComponentProps) {
-  const [chartData, setChartData] = useState<Record<string, any>[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const response = await fetch(`/api/datasets/${dataset.id}/query`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            x: {
-              column: panel.config.xAxis,
-              bucket: panel.config.bucket || 'none',
-            },
-            y: panel.config.yAxis.map((col) => ({
-              column: col,
-              agg: panel.config.aggregation || 'sum',
-            })),
-            groupBy: panel.config.groupBy
-              ? [{ column: panel.config.groupBy }]
-              : [],
-            filters: panel.config.filters || [],
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.json()
-          throw new Error(err.error || 'Failed to fetch data')
-        }
-
-        const data = await response.json()
-        setChartData(data)
-      } catch (err) {
-        console.error('Panel data fetch error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load data')
-      } finally {
-        setIsLoading(false)
-      }
+  // Memoize query config to prevent unnecessary refetches
+  // TanStack Query uses deep comparison on query keys, so this ensures stable references
+  const queryConfig = useMemo((): ChartQueryConfig | null => {
+    if (!panel.config.xAxis || panel.config.yAxis.length === 0) {
+      return null
     }
 
-    if (panel.config.xAxis && panel.config.yAxis.length > 0) {
-      fetchData()
-    } else {
-      setIsLoading(false)
-      setError('Invalid chart configuration')
+    return {
+      x: { column: panel.config.xAxis },
+      y: panel.config.yAxis.map((col) => ({
+        column: col,
+        aggregation: panel.config.aggregation || 'sum',
+      })),
+      groupBy: panel.config.groupBy || undefined,
+      bucket: panel.config.bucket || undefined,
+      filters: panel.config.filters,
     }
-  }, [dataset.id, panel.config])
+  }, [
+    panel.config.xAxis,
+    panel.config.yAxis,
+    panel.config.aggregation,
+    panel.config.groupBy,
+    panel.config.bucket,
+    panel.config.filters,
+  ])
+
+  const {
+    data: chartData = [],
+    isLoading,
+    error: queryError,
+  } = useChartDataQuery(dataset.id, queryConfig!, {
+    enabled: !!queryConfig,
+    // Keep data fresh for 5 minutes - panels don't need constant updates
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const error = queryError
+    ? 'Failed to load data'
+    : !queryConfig
+    ? 'Invalid chart configuration'
+    : null
 
   return (
     <Card className="h-full flex flex-col group">
@@ -132,5 +126,3 @@ export function DashboardPanelComponent({
     </Card>
   )
 }
-
-
