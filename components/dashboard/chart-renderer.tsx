@@ -21,9 +21,10 @@ import {
   ScatterChart,
   Scatter,
 } from 'recharts'
+import { formatDateLabel, isDateString } from '@/lib/date-utils'
 
 interface ChartRendererProps {
-  data: Record<string, any>[]
+  data: Record<string, string | number>[]
   config: ChartConfig
   height?: string | number
 }
@@ -50,15 +51,22 @@ export function ChartRenderer({
     const xAxis = config.xAxis
     const yAxis = config.yAxis
     const groupBy = config.groupBy
+    const bucket = config.bucket || 'day'
 
-    let processed: Record<string, any>[] = []
+    // Detect if x-axis values are dates by checking first row
+    const firstXValue = data[0]?.[xAxis]
+    const xAxisIsDate = isDateString(firstXValue)
+
+    let processed: Record<string, string | number>[] = []
     let keys: string[] = []
 
     if (groupBy) {
       // Pivot data for grouped charts
-      const map = new Map<string, Record<string, any>>()
+      const map = new Map<string, Record<string, string | number>>()
       data.forEach((row) => {
-        const xVal = String(row[xAxis])
+        const rawXVal = String(row[xAxis])
+        // Format dates if detected
+        const xVal = xAxisIsDate ? formatDateLabel(rawXVal, bucket) : rawXVal
         const groupVal = String(row[groupBy] || 'Unknown')
 
         yAxis.forEach((yCol) => {
@@ -84,7 +92,12 @@ export function ChartRenderer({
       keys = Array.from(keySet)
     } else {
       processed = data.map((row) => {
-        const item: Record<string, any> = { name: String(row[xAxis]) }
+        const rawXVal = String(row[xAxis])
+        // Format dates if detected
+        const formattedX = xAxisIsDate
+          ? formatDateLabel(rawXVal, bucket)
+          : rawXVal
+        const item: Record<string, string | number> = { name: formattedX }
         yAxis.forEach((yCol) => {
           item[yCol] = row[yCol]
         })
@@ -319,5 +332,3 @@ export function ChartRenderer({
       )
   }
 }
-
-

@@ -40,8 +40,11 @@ import {
   TrendingUp,
   Loader2,
   ScatterChart as ScatterIcon,
+  Save,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDateLabel } from '@/lib/date-utils'
+import { SaveToDashboardDialog } from '@/components/visualize/save-to-dashboard-dialog'
 
 type ChartType = 'line' | 'bar' | 'area' | 'pie' | 'scatter'
 type Bucket = 'day' | 'week' | 'month'
@@ -87,6 +90,7 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
   )
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saveToDashboardOpen, setSaveToDashboardOpen] = useState(false)
 
   const schema = (dataset.canonicalSchema || []).map((c) => {
     const id = c.id || (c as unknown as { name: string }).name
@@ -296,7 +300,9 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
       // Pivot
       const map = new Map<string, Record<string, string | number>>()
       chartData.forEach((row) => {
-        const xVal = String(row[xAxis])
+        const rawXVal = String(row[xAxis])
+        // Format dates if X-axis is a date column
+        const xVal = isDateXAxis ? formatDateLabel(rawXVal, bucket) : rawXVal
         const groupVal = String(row[groupBy] || 'Unknown')
 
         // For each Y axis
@@ -315,8 +321,14 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
       processedData = Array.from(map.values())
     } else {
       processedData = chartData.map((row) => {
+        const rawXVal = String(row[xAxis])
+        // Format dates if X-axis is a date column
+        const formattedX = isDateXAxis
+          ? formatDateLabel(rawXVal, bucket)
+          : rawXVal
+
         const item: Record<string, string | number> = {
-          name: String(row[xAxis]),
+          name: formattedX,
         }
         yAxis.forEach((yCol) => {
           item[yCol] = row[yCol]
@@ -684,10 +696,39 @@ export function ChartBuilder({ dataset }: ChartBuilderProps) {
 
       {/* Chart */}
       <div className="lg:col-span-3">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Chart Preview
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSaveToDashboardOpen(true)}
+            disabled={xAxis === 'none' || yAxis.length === 0}
+            className="gap-2"
+          >
+            <Save className="h-4 w-4" />
+            Save to Dashboard
+          </Button>
+        </div>
         <div className="h-[500px] p-6 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm">
           {renderChart()}
         </div>
       </div>
+
+      {/* Save to Dashboard Dialog */}
+      <SaveToDashboardDialog
+        open={saveToDashboardOpen}
+        onOpenChange={setSaveToDashboardOpen}
+        datasetId={dataset.id}
+        chartConfig={{
+          chartType,
+          xAxis,
+          yAxis,
+          groupBy,
+          bucket,
+        }}
+      />
     </div>
   )
 }
