@@ -1,5 +1,14 @@
 import { supabase } from './supabase'
-import type { Dataset, DataFile, DataRow } from './types'
+import type {
+  Dataset,
+  DataFile,
+  DataRow,
+  Dashboard,
+  DashboardPanel,
+  DashboardWithPanels,
+  DashboardWithDataset,
+  ChartConfig,
+} from './types'
 
 export async function getDatasets(userId: string): Promise<Dataset[]> {
   // Get datasets with file and row counts, filtered by user
@@ -210,15 +219,15 @@ export async function getAggregatedData(
   const config = {
     x: {
       column: params.xAxis,
-      bucket: params.bucket
+      bucket: params.bucket,
     },
     y: [
-      { column: params.yAxis, agg: 'sum' } // Default to sum
+      { column: params.yAxis, agg: 'sum' }, // Default to sum
     ],
     groupBy: params.groupBy !== 'none' ? [{ column: params.groupBy }] : [],
-    filters: []
+    filters: [],
   }
-  
+
   // If dates provided, add date filter
   // This is tricky because legacy code relied on parsed_date column.
   // The new query function uses data->>col.
@@ -227,11 +236,11 @@ export async function getAggregatedData(
   // So we might fail to add the filter correctly without looking up the schema.
   // For now, let's just rely on the legacy RPC if we really need it, OR
   // better, just update the caller to use the new function.
-  
-  // Since I am updating the caller (query route), I can remove this function or leave it as is calling old RPC 
+
+  // Since I am updating the caller (query route), I can remove this function or leave it as is calling old RPC
   // if I didn't delete the old RPC. (I didn't delete it).
   // But I'll keep it for safety and just add the new one.
-  
+
   const { data, error } = await supabase.rpc('get_aggregated_data', {
     p_dataset_id: datasetId,
     p_x_axis: params.xAxis,
@@ -300,4 +309,264 @@ export async function updateDatasetDetails(
 
   if (error) throw error
   return mapDataset(data)
+}
+
+// ============================================
+// DASHBOARDS
+// ============================================
+
+export async function getDashboards(
+  userId: string
+): Promise<DashboardWithDataset[]> {
+  const { data, error } = await supabase
+    .from('dashboards')
+    .select(
+      `
+      *,
+      datasets:dataset_id (
+        id,
+        name,
+        data_rows (count)
+      ),
+      dashboard_panels (id)
+    `
+    )
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+
+  return data.map((row: any) => ({
+    ...transformDashboard(row),
+    dataset: {
+      id: row.datasets.id,
+      name: row.datasets.name,
+      rowCount: row.datasets.data_rows?.[0]?.count || 0,
+    },
+    panelCount: row.dashboard_panels?.length || 0,
+  }))
+}
+
+export async function getDashboard(
+  id: string,
+  userId: string
+): Promise<DashboardWithPanels | null> {
+  const { data, error } = await supabase
+    .from('dashboards')
+    .select(
+      `
+      *,
+      dashboard_panels (*)
+    `
+    )
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    throw error
+  }
+
+  return {
+    ...transformDashboard(data),
+    panels: (data.dashboard_panels || [])
+      .map(transformPanel)
+      .sort(
+        (a: DashboardPanel, b: DashboardPanel) => a.sortOrder - b.sortOrder
+      ),
+  }
+}
+
+export async function createDashboard(
+  dashboard: {
+    datasetId: string
+    name: string
+    description?: string
+  },
+  userId: string
+): Promise<Dashboard> {
+  const { data, error } = await supabase
+    .from('dashboards')
+    .insert({
+      user_id: userId,
+      dataset_id: dashboard.datasetId,
+      name: dashboard.name,
+      description: dashboard.description,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return transformDashboard(data)
+}
+
+export async function updateDashboard(
+  id: string,
+  updates: Partial<Pick<Dashboard, 'name' | 'description'>>,
+  userId: string
+): Promise<Dashboard> {
+  const { data, error } = await supabase
+    .from('dashboards')
+    .update({
+      ...(updates.name && { name: updates.name }),
+      ...(updates.description !== undefined && {
+        description: updates.description,
+      }),
+    })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return transformDashboard(data)
+}
+
+export async function deleteDashboard(
+  id: string,
+  userId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('dashboards')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
+
+  if (error) throw error
+}
+
+// ============================================
+// DASHBOARD PANELS
+// ============================================
+
+export async function addPanel(
+  dashboardId: string,
+  panel: {
+    title: string
+    config: ChartConfig
+  },
+  userId: string
+): Promise<DashboardPanel> {
+  // First verify dashboard ownership
+  const dashboard = await getDashboard(dashboardId, userId)
+  if (!dashboard) throw new Error('Dashboard not found')
+
+  // Get next sort order
+  const maxSort = Math.max(0, ...dashboard.panels.map((p) => p.sortOrder))
+
+  const { data, error } = await supabase
+    .from('dashboard_panels')
+    .insert({
+      dashboard_id: dashboardId,
+      title: panel.title,
+      config: panel.config,
+      sort_order: maxSort + 1,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return transformPanel(data)
+}
+
+export async function updatePanel(
+  panelId: string,
+  updates: Partial<Pick<DashboardPanel, 'title' | 'config' | 'sortOrder'>>,
+  userId: string
+): Promise<DashboardPanel> {
+  // Verify ownership through dashboard
+  const { data: panel } = await supabase
+    .from('dashboard_panels')
+    .select('dashboard_id')
+    .eq('id', panelId)
+    .single()
+
+  if (!panel) throw new Error('Panel not found')
+
+  const dashboard = await getDashboard(panel.dashboard_id, userId)
+  if (!dashboard) throw new Error('Unauthorized')
+
+  const { data, error } = await supabase
+    .from('dashboard_panels')
+    .update({
+      ...(updates.title && { title: updates.title }),
+      ...(updates.config && { config: updates.config }),
+      ...(updates.sortOrder !== undefined && { sort_order: updates.sortOrder }),
+    })
+    .eq('id', panelId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return transformPanel(data)
+}
+
+export async function deletePanel(
+  panelId: string,
+  userId: string
+): Promise<void> {
+  // Verify ownership through dashboard
+  const { data: panel } = await supabase
+    .from('dashboard_panels')
+    .select('dashboard_id')
+    .eq('id', panelId)
+    .single()
+
+  if (!panel) throw new Error('Panel not found')
+
+  const dashboard = await getDashboard(panel.dashboard_id, userId)
+  if (!dashboard) throw new Error('Unauthorized')
+
+  const { error } = await supabase
+    .from('dashboard_panels')
+    .delete()
+    .eq('id', panelId)
+
+  if (error) throw error
+}
+
+export async function reorderPanels(
+  dashboardId: string,
+  panelIds: string[],
+  userId: string
+): Promise<void> {
+  // Verify ownership
+  const dashboard = await getDashboard(dashboardId, userId)
+  if (!dashboard) throw new Error('Unauthorized')
+
+  // Update sort orders
+  const updates = panelIds.map((id, index) =>
+    supabase.from('dashboard_panels').update({ sort_order: index }).eq('id', id)
+  )
+
+  await Promise.all(updates)
+}
+
+// ============================================
+// DASHBOARD TRANSFORMERS
+// ============================================
+
+function transformDashboard(row: any): Dashboard {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    datasetId: row.dataset_id,
+    name: row.name,
+    description: row.description,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  }
+}
+
+function transformPanel(row: any): DashboardPanel {
+  return {
+    id: row.id,
+    dashboardId: row.dashboard_id,
+    title: row.title,
+    config: row.config,
+    sortOrder: row.sort_order || 0,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  }
 }

@@ -3,7 +3,13 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Database, Upload, BarChart3, Settings } from 'lucide-react'
+import {
+  Database,
+  Upload,
+  BarChart3,
+  LayoutDashboard,
+  Settings,
+} from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { signOut } from '@/lib/auth-client'
 import { AuthDialog } from '@/components/auth/auth-dialog'
@@ -22,6 +28,7 @@ const navItems = [
   { href: '/', label: 'Datasets', icon: Database },
   { href: '/upload', label: 'Upload', icon: Upload },
   { href: '/visualize', label: 'Visualize', icon: BarChart3 },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
 ]
 
 export function Navigation() {
