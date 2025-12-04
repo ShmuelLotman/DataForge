@@ -78,18 +78,20 @@ The migration file is located at `supabase/migrations/004_better_auth_tables.sql
 ### Usage Examples
 
 **Client-side:**
+
 ```tsx
 import { useAuth } from '@/hooks/use-auth'
 import { signIn, signOut } from '@/lib/auth-client'
 
 function MyComponent() {
   const { user, isAuthenticated } = useAuth()
-  
+
   // Use user data
 }
 ```
 
 **Server-side:**
+
 ```tsx
 import { getSession, requireAuth } from '@/lib/auth-server'
 

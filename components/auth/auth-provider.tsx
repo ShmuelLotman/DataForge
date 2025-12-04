@@ -8,4 +8,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // This component is here for consistency and future extensibility
   return <>{children}</>
 }
-

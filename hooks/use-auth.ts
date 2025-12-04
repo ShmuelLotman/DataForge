@@ -20,4 +20,3 @@ export function useAuth() {
     isAuthenticated: !!session?.user,
   }
 }
-

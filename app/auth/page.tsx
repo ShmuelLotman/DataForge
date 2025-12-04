@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signIn, signUp } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,22 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { BarChart3 } from 'lucide-react'
 
+// Wrapper component to handle Suspense for useSearchParams
 export default function AuthPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <AuthPageContent />
+    </Suspense>
+  )
+}
+
+function AuthPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -48,6 +63,7 @@ export default function AuthPage() {
         router.push(redirectTo)
       }
     } catch (error) {
+      console.error('Error signing in:', error)
       toast.error('An error occurred during sign in')
     } finally {
       setIsLoading(false)
@@ -157,7 +173,9 @@ export default function AuthPage() {
                     className="w-full h-11"
                     disabled={isLoading}
                   >
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isLoading && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     Sign In
                   </Button>
                 </form>
@@ -213,7 +231,9 @@ export default function AuthPage() {
                     className="w-full h-11"
                     disabled={isLoading}
                   >
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isLoading && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     Create account
                   </Button>
                 </form>
@@ -244,8 +264,8 @@ export default function AuthPage() {
               Transform your data into insights
             </h2>
             <p className="text-muted-foreground">
-              Upload CSV files, create beautiful visualizations, and explore your
-              data with powerful analytics tools.
+              Upload CSV files, create beautiful visualizations, and explore
+              your data with powerful analytics tools.
             </p>
           </div>
         </div>
@@ -253,4 +273,3 @@ export default function AuthPage() {
     </div>
   )
 }
-

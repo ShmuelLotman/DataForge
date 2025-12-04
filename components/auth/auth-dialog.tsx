@@ -22,7 +22,10 @@ interface AuthDialogProps {
   defaultTab?: 'signin' | 'signup'
 }
 
-export function AuthDialog({ children, defaultTab = 'signin' }: AuthDialogProps) {
+export function AuthDialog({
+  children,
+  defaultTab = 'signin',
+}: AuthDialogProps) {
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [email, setEmail] = useState('')
@@ -183,4 +186,3 @@ export function AuthDialog({ children, defaultTab = 'signin' }: AuthDialogProps)
     </Dialog>
   )
 }
-
