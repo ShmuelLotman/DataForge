@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   Rows3,
   Loader2,
+  Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
@@ -95,9 +96,21 @@ export function VisualizeClient({ datasetId }: VisualizeClientProps) {
                   <Database className="h-7 w-7 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">
-                    {dataset.name}
-                  </h1>
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-3xl font-bold tracking-tight">
+                      {dataset.name}
+                    </h1>
+                    <Link href={`/visualize/${dataset.id}/ai`}>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
+                      >
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        AI Mode
+                      </Button>
+                    </Link>
+                  </div>
                   {dataset.description && (
                     <p className="text-muted-foreground mt-1">
                       {dataset.description}
