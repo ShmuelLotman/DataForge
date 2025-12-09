@@ -85,14 +85,17 @@ export function ChatSidebar({
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
+    // Scroll to bottom when new messages arrive or when loading state changes
     const scrollContainer = scrollRef.current?.querySelector(
       '[data-slot="scroll-area-viewport"]'
     )
     if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight
+      })
     }
-  }, [messages])
+  }, [messages, isLoading])
 
   // Focus input on mount
   useEffect(() => {
@@ -121,9 +124,10 @@ export function ChatSidebar({
         'flex flex-col h-full bg-card/50 backdrop-blur-xl border-l border-border/50',
         className
       )}
+      style={{ height: '100%' }}
     >
       {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b border-border/50">
+      <div className="flex items-center gap-3 p-4 border-b border-border/50 shrink-0">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-primary/20">
           <Sparkles className="h-5 w-5 text-primary" />
         </div>
@@ -134,61 +138,63 @@ export function ChatSidebar({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
-        <div className="h-full">
-          <AnimatePresence initial={false}>
-            {messages.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-4"
-              >
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  I can help you explore and visualize your data. Try asking:
-                </p>
-                <div className="space-y-2">
-                  {SUGGESTED_PROMPTS.map((prompt, i) => (
-                    <motion.button
-                      key={prompt}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      onClick={() => handlePromptClick(prompt)}
-                      className="w-full text-left p-3 rounded-xl bg-secondary/30 hover:bg-secondary/50 text-sm transition-colors border border-transparent hover:border-primary/20"
-                    >
-                      {prompt}
-                    </motion.button>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full p-4" ref={scrollRef}>
+          <div className="pb-4">
+            <AnimatePresence initial={false}>
+              {messages.length === 0 ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-4"
+                >
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    I can help you explore and visualize your data. Try asking:
+                  </p>
+                  <div className="space-y-2">
+                    {SUGGESTED_PROMPTS.map((prompt, i) => (
+                      <motion.button
+                        key={prompt}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        onClick={() => handlePromptClick(prompt)}
+                        className="w-full text-left p-3 rounded-xl bg-secondary/30 hover:bg-secondary/50 text-sm transition-colors border border-transparent hover:border-primary/20"
+                      >
+                        {prompt}
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="space-y-4">
+                  {messages.map((message, i) => (
+                    <ChatMessage key={message.id} message={message} index={i} />
                   ))}
+                  {isLoading && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-2 text-muted-foreground mt-4"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Thinking...</span>
+                    </motion.div>
+                  )}
                 </div>
-              </motion.div>
-            ) : (
-              <div className="space-y-4">
-                {messages.map((message, i) => (
-                  <ChatMessage key={message.id} message={message} index={i} />
-                ))}
-                {isLoading && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-2 text-muted-foreground"
-                  >
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Thinking...</span>
-                  </motion.div>
-                )}
-              </div>
-            )}
-          </AnimatePresence>
-        </div>
-      </ScrollArea>
+              )}
+            </AnimatePresence>
+          </div>
+        </ScrollArea>
+      </div>
 
       {/* Error State */}
       {error && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mx-4 mb-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20"
+          className="mx-4 mb-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 shrink-0"
         >
           <p className="text-sm text-destructive">{error.message}</p>
           <Button
@@ -204,7 +210,10 @@ export function ChatSidebar({
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-border/50">
+      <form
+        onSubmit={handleSubmit}
+        className="p-4 border-t border-border/50 shrink-0"
+      >
         <div className="flex gap-2">
           <Input
             ref={inputRef}
@@ -238,11 +247,30 @@ function ChatMessage({ message, index }: ChatMessageProps) {
 
   // Extract text content from message parts
   const textParts = message.parts?.filter((p) => p.type === 'text') || []
-  const content = textParts.map((p) => ('text' in p ? p.text : '')).join('')
+  const content = textParts
+    .map((p) => {
+      if (p.type === 'text' && 'text' in p) {
+        return p.text
+      }
+      return ''
+    })
+    .join('')
+
+  // Check if any text part is still streaming
+  const isStreaming = textParts.some(
+    (p) => p.type === 'text' && p.state === 'streaming'
+  )
 
   // Extract tool invocations
   const toolInvocations =
-    message.parts?.filter((p) => p.type === 'tool-call') || []
+    message.parts?.filter(
+      (p) => p.type === 'tool-call' || p.type === 'tool-result'
+    ) || []
+
+  // Don't render empty messages unless they're user messages or have tool calls
+  if (!content && !isUser && toolInvocations.length === 0) {
+    return null
+  }
 
   return (
     <motion.div
@@ -274,7 +302,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           isUser ? 'text-right' : 'text-left'
         )}
       >
-        {content && (
+        {(content || isUser) && (
           <div
             className={cn(
               'inline-block p-3 rounded-2xl text-sm max-w-[85%]',
@@ -283,7 +311,12 @@ function ChatMessage({ message, index }: ChatMessageProps) {
                 : 'bg-secondary/50 rounded-tl-sm'
             )}
           >
-            <p className="whitespace-pre-wrap">{content}</p>
+            <p className="whitespace-pre-wrap">
+              {content || (isUser ? '...' : '')}
+              {isStreaming && (
+                <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
+              )}
+            </p>
           </div>
         )}
 
@@ -299,12 +332,28 @@ function ChatMessage({ message, index }: ChatMessageProps) {
                 }
                 return (
                   <ToolResultCard
-                    key={i}
+                    key={`tool-call-${i}-${toolCall.toolCallId || i}`}
                     tool={{
                       toolName:
                         toolCall.toolName || toolCall.toolCallId || 'unknown',
                       args: (toolCall.input as Record<string, unknown>) || {},
                       result: undefined,
+                    }}
+                  />
+                )
+              } else if (toolPart.type === 'tool-result') {
+                const toolResult = toolPart as {
+                  toolName?: string
+                  toolCallId?: string
+                  output?: unknown
+                }
+                return (
+                  <ToolResultCard
+                    key={`tool-result-${i}-${toolResult.toolCallId || i}`}
+                    tool={{
+                      toolName: toolResult.toolName || 'unknown',
+                      args: {},
+                      result: toolResult.output,
                     }}
                   />
                 )

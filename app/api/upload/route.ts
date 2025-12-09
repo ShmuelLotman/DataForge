@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getDataset, updateDataset, addFile, addRows } from '@/lib/db-actions'
 import { processCSV, validateSchemaCompatibility } from '@/lib/csv-parser'
 import { requireAuth } from '@/lib/auth-server'
+import { generateDatasetEmbeddings } from '@/lib/ai/embeddings'
 
 export async function POST(request: Request) {
   try {
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
     let fileRecord: any = null
     let totalRows = 0
     let rowOffset = 0
+    let finalSchema = dataset.canonicalSchema
 
     // Process CSV Stream
     const result = await processCSV(file.stream(), async (rows, schema) => {
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
             { canonicalSchema: schema },
             session.user.id
           )
+          finalSchema = schema
         }
 
         // Create File Record
@@ -68,20 +71,20 @@ export async function POST(request: Request) {
         __rowNum: rowOffset + i + 1,
       }))
 
-      // Map to DB format (addRows expects raw data, it handles mapping but we need to pass row number if we want it correct)
-      // Actually db-actions addRows implementation I just wrote resets row_number.
-      // I should update addRows to accept an offset or handle it here.
-      // For now, let's just pass the rows and let addRows handle it (but it will be 0-indexed per batch).
-      // To fix this, I'll modify addRows in the next step or just accept it for now.
-      // Wait, I can't modify addRows easily in the middle of this file write.
-      // I'll update addRows to take row objects directly or handle offset.
-      // Let's assume addRows is smart enough or I'll fix it.
-
       await addRows(datasetId, fileRecord.id, rows, schema)
 
       totalRows += rows.length
       rowOffset += rows.length
     })
+
+    // Generate AI embeddings for the dataset (async, don't block response)
+    // This enables RAG-based context retrieval for the AI assistant
+    const updatedDataset = await getDataset(datasetId, session.user.id)
+    if (updatedDataset) {
+      generateDatasetEmbeddings(datasetId, updatedDataset).catch((err) => {
+        console.error('[Upload] Error generating embeddings:', err)
+      })
+    }
 
     return NextResponse.json({
       success: true,

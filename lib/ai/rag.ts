@@ -5,6 +5,9 @@ import type { RAGContext } from '@dataforge/types'
 /**
  * Retrieve relevant context from dataset embeddings
  * Called by getDatasetContext tool - AI decides when to invoke
+ *
+ * Uses semantic search to find the most relevant embedded content
+ * for answering questions about the dataset.
  */
 export async function findRelevantContext(
   datasetId: string,
@@ -12,9 +15,11 @@ export async function findRelevantContext(
   options: {
     threshold?: number
     limit?: number
+    contentTypes?: Array<'schema' | 'sample' | 'description' | 'statistics'>
   } = {}
 ): Promise<RAGContext[]> {
-  const { threshold = 0.5, limit = 5 } = options
+  // Lower default threshold for better recall - embeddings are already filtered by dataset
+  const { threshold = 0.3, limit = 8 } = options
 
   // Generate embedding for the query
   const queryEmbedding = await generateEmbedding(query)
@@ -28,15 +33,55 @@ export async function findRelevantContext(
   })
 
   if (error) {
-    console.error('RAG retrieval error:', error)
+    console.error('[RAG] Retrieval error:', error)
     return []
   }
 
-  return (data || []).map((item: Record<string, unknown>) => ({
+  let results = (data || []).map((item: Record<string, unknown>) => ({
     content: item.content as string,
     contentType: item.content_type as RAGContext['contentType'],
     metadata: item.metadata as Record<string, unknown>,
     similarity: item.similarity as number,
   }))
+
+  // Filter by content type if specified
+  if (options.contentTypes && options.contentTypes.length > 0) {
+    results = results.filter((r) =>
+      options.contentTypes!.includes(r.contentType)
+    )
+  }
+
+  // Sort by similarity (highest first)
+  results.sort((a, b) => b.similarity - a.similarity)
+
+  console.log(
+    `[RAG] Found ${results.length} results for query: "${query.slice(
+      0,
+      50
+    )}..."`
+  )
+
+  return results
 }
 
+/**
+ * Get all embeddings for a dataset (for debugging/inspection)
+ */
+export async function getAllDatasetEmbeddings(
+  datasetId: string
+): Promise<Array<{ contentType: string; content: string }>> {
+  const { data, error } = await supabase
+    .from('dataset_embeddings')
+    .select('content_type, content')
+    .eq('dataset_id', datasetId)
+
+  if (error) {
+    console.error('[RAG] Error fetching all embeddings:', error)
+    return []
+  }
+
+  return (data || []).map((item) => ({
+    contentType: item.content_type,
+    content: item.content,
+  }))
+}

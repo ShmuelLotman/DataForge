@@ -70,13 +70,52 @@ export async function POST(req: NextRequest) {
       return textPart && 'text' in textPart
     })
 
-    // Stream response - AI calls getDatasetContext tool as needed
+    // Stream response - AI calls tools as needed
     const result = streamText({
       model: openai('gpt-4o-mini'),
       system: systemPrompt,
       messages: convertToModelMessages(messages),
       tools,
-      stopWhen: stepCountIs(5), // AI can: getDatasetContext → generateChart → respond
+      stopWhen: stepCountIs(8), // Allow more steps for: getDatasetContext → getMetricStatistics/queryDatasetData → respond
+      onError: (error) => {
+        console.error('[AI Chat] StreamText error:', error)
+      },
+      onStepFinish: (event) => {
+        console.log(`[AI Chat] Step finished: ${event.finishReason}`)
+        if (event.toolCalls && event.toolCalls.length > 0) {
+          console.log(
+            `[AI Chat] Tool calls:`,
+            event.toolCalls.map((tc) => ({
+              name: tc.toolName,
+              args: 'args' in tc ? tc.args : undefined,
+            }))
+          )
+        }
+        if (event.toolResults && event.toolResults.length > 0) {
+          console.log(
+            `[AI Chat] Tool results:`,
+            event.toolResults.map((tr) => {
+              const result = 'result' in tr ? tr.result : undefined
+              return {
+                toolName: tr.toolName,
+                success:
+                  result &&
+                  typeof result === 'object' &&
+                  'success' in result
+                    ? (result as { success: boolean }).success
+                    : 'unknown',
+                rowCount:
+                  result &&
+                  typeof result === 'object' &&
+                  'rows' in result &&
+                  Array.isArray((result as { rows: unknown[] }).rows)
+                    ? (result as { rows: unknown[] }).rows.length
+                    : 'N/A',
+              }
+            })
+          )
+        }
+      },
       onFinish: async ({ text, toolCalls, toolResults }) => {
         if (chatSessionId) {
           // Store user message
@@ -129,7 +168,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return result.toTextStreamResponse({
+    return result.toUIMessageStreamResponse({
       headers: { 'X-Chat-Session-Id': chatSessionId || '' },
     })
   } catch (error) {
