@@ -116,4 +116,29 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
+### Vercel Environment Variables
+
+When deploying to Vercel, make sure to set the following environment variables in your Vercel project settings:
+
+**Required:**
+- `DATABASE_URL` - Your Supabase database connection string
+- `BETTER_AUTH_SECRET` - A secure random secret (at least 32 characters)
+- `NEXT_PUBLIC_APP_URL` - Your Vercel deployment URL (e.g., `https://your-app.vercel.app`)
+
+**Optional:**
+- `BETTER_AUTH_URL` - Override the base URL for auth (if different from `NEXT_PUBLIC_APP_URL`)
+- `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL (if using Supabase features)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anon key (if using Supabase features)
+
+**Note:** The app will automatically detect Vercel's `VERCEL_URL` environment variable if `NEXT_PUBLIC_APP_URL` is not set, but it's recommended to set `NEXT_PUBLIC_APP_URL` explicitly for consistency.
+
+### Common Vercel Auth Issues
+
+If authentication isn't working on Vercel:
+
+1. **Check Environment Variables**: Ensure all required environment variables are set in Vercel dashboard
+2. **Verify Base URL**: Make sure `NEXT_PUBLIC_APP_URL` matches your Vercel deployment URL exactly (including `https://`)
+3. **Check Database Connection**: Verify `DATABASE_URL` is correct and accessible from Vercel
+4. **Redeploy**: After setting environment variables, trigger a new deployment
+
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

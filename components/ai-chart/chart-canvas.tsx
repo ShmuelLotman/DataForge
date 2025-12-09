@@ -30,7 +30,10 @@ export function ChartCanvas({ config, data, isLoading }: ChartCanvasProps) {
 
       {/* Animated Glow Effects */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-accent/10 rounded-full blur-[80px] pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
+      <div
+        className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-accent/10 rounded-full blur-[80px] pointer-events-none animate-pulse"
+        style={{ animationDelay: '1s' }}
+      />
 
       {/* Chart Layer */}
       <div className="absolute inset-0 p-8">
@@ -125,4 +128,3 @@ function EmptyState() {
     </motion.div>
   )
 }
-
