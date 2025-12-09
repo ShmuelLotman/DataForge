@@ -5,6 +5,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
   Database,
   FileSpreadsheet,
   Rows3,
@@ -13,6 +19,8 @@ import {
   BarChart3,
   Trash2,
   Pencil,
+  Upload,
+  Sparkles,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -35,6 +43,8 @@ export function DatasetCard({
   onDelete,
   index = 0,
 }: DatasetCardProps) {
+  const hasData = dataset.rowCount > 0
+
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -108,20 +118,54 @@ export function DatasetCard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Link href={`/visualize/${dataset.id}`}>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="bg-primary/10 text-primary hover:bg-primary/20 border-0"
-              >
-                <BarChart3 className="h-4 w-4 mr-1.5" />
-                Visualize
-              </Button>
-            </Link>
+            {hasData ? (
+              <Link href={`/visualize/${dataset.id}`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-primary/10 text-primary hover:bg-primary/20 border-0"
+                  aria-label={`Visualize ${dataset.name}`}
+                  tabIndex={0}
+                >
+                  <BarChart3 className="h-4 w-4 mr-1.5" />
+                  Visualize
+                </Button>
+              </Link>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link href={`/upload?dataset=${dataset.id}`}>
+                      <Button
+                        size="sm"
+                        className="relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 border-0 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-300"
+                        aria-label={`Add data to ${dataset.name}`}
+                        tabIndex={0}
+                      >
+                        <Sparkles className="h-3.5 w-3.5 mr-1.5 animate-pulse" />
+                        <Upload className="h-4 w-4 mr-1.5" />
+                        Add Data
+                      </Button>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <p className="text-sm">
+                      Upload CSV files to start visualizing your data
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="More options"
+                  tabIndex={0}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -136,6 +180,14 @@ export function DatasetCard({
                     Add Files
                   </DropdownMenuItem>
                 </Link>
+                {hasData && (
+                  <Link href={`/visualize/${dataset.id}`}>
+                    <DropdownMenuItem>
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      Visualize
+                    </DropdownMenuItem>
+                  </Link>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

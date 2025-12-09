@@ -160,19 +160,26 @@ export function useDatasetFilesQuery(
  * ```
  */
 export function useCreateDatasetMutation(
-  options?: UseMutationOptions<Dataset, AxiosError, CreateDatasetInput>
+  options?: Omit<
+    UseMutationOptions<Dataset, AxiosError, CreateDatasetInput, unknown>,
+    'mutationFn'
+  >
 ) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useMutation<Dataset, AxiosError, CreateDatasetInput, unknown>({
     mutationFn: async (input: CreateDatasetInput) => {
       const { data } = await axios.post<Dataset>('/api/datasets', input)
       return data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.datasets.lists() })
-    },
     ...options,
+    onSuccess: async (data, variables, context) => {
+      // Always invalidate the datasets list to ensure fresh data
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.datasets.lists(),
+      })
+      // Call user's onSuccess callback if provided
+    },
   })
 }
 
