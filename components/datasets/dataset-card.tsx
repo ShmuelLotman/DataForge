@@ -5,12 +5,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
   Database,
   FileSpreadsheet,
   Rows3,
@@ -21,6 +15,7 @@ import {
   Pencil,
   Upload,
   Sparkles,
+  ArrowRight,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -54,153 +49,116 @@ export function DatasetCard({
   }
 
   const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('en-US').format(num)
+    return new Intl.NumberFormat('en-US', { notation: 'compact' }).format(num)
   }
 
   return (
     <Card
       className={cn(
-        'group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm',
-        'hover:border-primary/30 hover:bg-card/80 transition-all duration-300',
-        'animate-in fade-in slide-in-from-bottom-4'
+        'group relative flex flex-col justify-between overflow-hidden border border-border/50 bg-card hover:bg-muted/10 transition-all duration-300',
+        'hover:shadow-xl hover:border-primary/20 hover:-translate-y-1',
+        'h-[260px]' // Increased height for better spacing
       )}
-      style={{
-        animationDelay: `${index * 100}ms`,
-        animationFillMode: 'backwards',
-      }}
     >
-      {/* Subtle gradient overlay on hover */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      {/* Subtle Gradient Mesh Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-      <CardContent className="relative p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4 flex-1 min-w-0">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20">
-              <Database className="h-6 w-6 text-primary" />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-lg truncate text-foreground">
-                  {dataset.name}
-                </h3>
-                {dataset.canonicalSchema && (
-                  <Badge
-                    variant="secondary"
-                    className="shrink-0 text-xs bg-primary/10 text-primary border-primary/20"
-                  >
-                    {dataset.canonicalSchema.length} cols
-                  </Badge>
-                )}
-              </div>
-
-              {dataset.description && (
-                <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
-                  {dataset.description}
-                </p>
-              )}
-
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>{dataset.fileCount} files</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Rows3 className="h-3.5 w-3.5" />
-                  <span>{formatNumber(dataset.rowCount)} rows</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5" />
-                  <span>{formatDate(dataset.updatedAt)}</span>
-                </div>
-              </div>
-            </div>
+      <div className="p-6 flex flex-col h-full relative z-10">
+        {/* Top Row: Icon & Menu */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary/50 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
+            <Database className="h-6 w-6" />
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {hasData ? (
-              <Link href={`/visualize/${dataset.id}`}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="bg-primary/10 text-primary hover:bg-primary/20 border-0"
-                  aria-label={`Visualize ${dataset.name}`}
-                  tabIndex={0}
-                >
-                  <BarChart3 className="h-4 w-4 mr-1.5" />
-                  Visualize
-                </Button>
-              </Link>
-            ) : (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link href={`/upload?dataset=${dataset.id}`}>
-                      <Button
-                        size="sm"
-                        className="relative overflow-hidden bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 border-0 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-300"
-                        aria-label={`Add data to ${dataset.name}`}
-                        tabIndex={0}
-                      >
-                        <Sparkles className="h-3.5 w-3.5 mr-1.5 animate-pulse" />
-                        <Upload className="h-4 w-4 mr-1.5" />
-                        Add Data
-                      </Button>
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    <p className="text-sm">
-                      Upload CSV files to start visualizing your data
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label="More options"
-                  tabIndex={0}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Details
+              </DropdownMenuItem>
+              <Link href={`/upload?dataset=${dataset.id}`}>
                 <DropdownMenuItem>
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit Details
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Add Files
                 </DropdownMenuItem>
-                <Link href={`/upload?dataset=${dataset.id}`}>
+              </Link>
+              {hasData && (
+                <Link href={`/visualize/${dataset.id}`}>
                   <DropdownMenuItem>
-                    <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Add Files
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Visualize
                   </DropdownMenuItem>
                 </Link>
-                {hasData && (
-                  <Link href={`/visualize/${dataset.id}`}>
-                    <DropdownMenuItem>
-                      <BarChart3 className="h-4 w-4 mr-2" />
-                      Visualize
-                    </DropdownMenuItem>
-                  </Link>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDelete?.(dataset.id)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Dataset
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => onDelete?.(dataset.id)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Dataset
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </CardContent>
+
+        {/* Middle: Title & Description */}
+        <div className="flex-1 min-h-0 space-y-3">
+          <Link
+            href={
+              hasData
+                ? `/visualize/${dataset.id}`
+                : `/upload?dataset=${dataset.id}`
+            }
+            className="block group-hover:text-primary transition-colors"
+          >
+            <h3 className="font-heading font-semibold text-xl leading-tight truncate">
+              {dataset.name}
+            </h3>
+          </Link>
+          <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+            {dataset.description || 'No description provided.'}
+          </p>
+        </div>
+
+        {/* Bottom: Stats & Action */}
+        <div className="mt-6 pt-5 border-t border-border/40 flex items-center justify-between">
+          <div className="flex items-center gap-5 text-sm font-medium text-muted-foreground">
+            <div className="flex items-center gap-2" title="Row count">
+              <Rows3 className="h-4 w-4" />
+              <span>{formatNumber(dataset.rowCount)}</span>
+            </div>
+            <div className="flex items-center gap-2" title="Last updated">
+              <Calendar className="h-4 w-4" />
+              <span>{formatDate(dataset.updatedAt)}</span>
+            </div>
+          </div>
+
+          {/* Hover Action - Replaces stats on hover if we want, or just sits there. 
+                 Let's make it a subtle arrow that lights up. */}
+          <Link
+            href={
+              hasData
+                ? `/visualize/${dataset.id}`
+                : `/upload?dataset=${dataset.id}`
+            }
+          >
+            <div className="flex items-center gap-2 text-sm font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 ml-4">
+              {hasData ? 'Visualize' : 'Add Data'}
+              <ArrowRight className="h-4 w-4" />
+            </div>
+          </Link>
+        </div>
+      </div>
     </Card>
   )
 }

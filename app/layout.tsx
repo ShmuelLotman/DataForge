@@ -1,21 +1,21 @@
 import type React from 'react'
 import type { Metadata } from 'next'
-import { Outfit, Manrope } from 'next/font/google'
+import { Syne, Plus_Jakarta_Sans } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { QueryProvider } from '@dataforge/query-hooks'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const outfit = Outfit({
+const syne = Syne({
   subsets: ['latin'],
-  variable: '--font-outfit',
+  variable: '--font-syne',
   display: 'swap',
 })
 
-const manrope = Manrope({
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  variable: '--font-manrope',
+  variable: '--font-jakarta',
   display: 'swap',
 })
 
@@ -33,12 +33,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${outfit.variable} ${manrope.variable} font-sans antialiased`}
+        className={`${syne.variable} ${plusJakarta.variable} font-sans antialiased`}
       >
         <QueryProvider>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
+            defaultTheme="dark"
             enableSystem
             disableTransitionOnChange
           >

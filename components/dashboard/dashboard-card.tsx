@@ -1,7 +1,7 @@
 'use client'
 
 import type { DashboardWithDataset } from '@/lib/types'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -16,9 +16,12 @@ import {
   Trash2,
   Copy,
   Database,
+  Calendar,
+  ArrowRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
+import { cn } from '@/lib/utils'
 
 interface DashboardCardProps {
   dashboard: DashboardWithDataset
@@ -37,37 +40,30 @@ export function DashboardCard({
 }: DashboardCardProps) {
   return (
     <Card
-      className="group hover:border-primary/30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4"
-      style={{
-        animationDelay: `${index * 50}ms`,
-        animationFillMode: 'backwards',
-      }}
+      className={cn(
+        'group relative flex flex-col justify-between overflow-hidden border border-border/50 bg-card hover:bg-muted/10 transition-all duration-300',
+        'hover:shadow-xl hover:border-primary/20 hover:-translate-y-1',
+        'h-[260px]'
+      )}
     >
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <Link href={`/dashboard/${dashboard.id}`} className="flex-1">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                <LayoutDashboard className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h3 className="font-semibold group-hover:text-primary transition-colors">
-                  {dashboard.name}
-                </h3>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Database className="h-3 w-3" />
-                  {dashboard.dataset.name}
+      {/* Subtle Gradient Mesh Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+      <div className="p-6 flex flex-col h-full relative z-10">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+            <Link href={`/dashboard/${dashboard.id}`}>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary/50 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
+                    <LayoutDashboard className="h-6 w-6" />
                 </div>
-              </div>
-            </div>
-          </Link>
+            </Link>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 aria-label="Dashboard actions"
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -93,26 +89,49 @@ export function DashboardCard({
           </DropdownMenu>
         </div>
 
-        {dashboard.description && (
-          <p className="mt-3 text-sm text-muted-foreground line-clamp-2">
-            {dashboard.description}
-          </p>
-        )}
+        {/* Content */}
+        <div className="flex-1 min-h-0 space-y-3">
+          <Link href={`/dashboard/${dashboard.id}`} className="block group-hover:text-primary transition-colors">
+            <h3 className="font-heading font-semibold text-xl leading-tight truncate">
+              {dashboard.name}
+            </h3>
+          </Link>
+          
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+             <Database className="h-3.5 w-3.5" />
+             <span className="truncate max-w-[200px]">{dashboard.dataset.name}</span>
+          </div>
 
-        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {dashboard.panelCount} panel{dashboard.panelCount !== 1 ? 's' : ''}
-          </span>
-          <span>
-            Updated{' '}
-            {formatDistanceToNow(new Date(dashboard.updatedAt), {
-              addSuffix: true,
-            })}
-          </span>
+          <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+            {dashboard.description || "No description provided."}
+          </p>
         </div>
-      </CardContent>
+
+        {/* Footer Info */}
+        <div className="mt-6 pt-5 border-t border-border/40 flex items-center justify-between">
+          <div className="flex items-center gap-5 text-sm font-medium text-muted-foreground">
+             <div className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary/50" />
+                <span>{dashboard.panelCount} panels</span>
+             </div>
+             <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>
+                    {formatDistanceToNow(new Date(dashboard.updatedAt), {
+                        addSuffix: true,
+                    })}
+                </span>
+             </div>
+          </div>
+          
+           <Link href={`/dashboard/${dashboard.id}`}>
+                <div className="flex items-center gap-2 text-sm font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
+                    Open
+                    <ArrowRight className="h-4 w-4" />
+                </div>
+             </Link>
+        </div>
+      </div>
     </Card>
   )
 }
-
-

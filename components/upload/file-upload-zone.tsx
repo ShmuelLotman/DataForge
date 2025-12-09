@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -51,6 +52,10 @@ export function FileUploadZone({
     const csvFiles = Array.from(fileList).filter(
       (f) => f.type === 'text/csv' || f.name.endsWith('.csv')
     )
+    
+    if (csvFiles.length < Array.from(fileList).length) {
+        toast.error('Only CSV files are supported')
+    }
 
     const newFiles: UploadedFile[] = csvFiles.map((file) => ({
       id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -149,6 +154,7 @@ export function FileUploadZone({
 
     setIsUploading(false)
     onUploadComplete?.()
+    toast.success('Upload complete')
   }
 
   const pendingFiles = files.filter((f) => f.status === 'pending')
@@ -163,10 +169,10 @@ export function FileUploadZone({
         onDragOver={handleDrag}
         onDrop={handleDrop}
         className={cn(
-          'relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300',
+          'group relative border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-500 ease-out cursor-pointer overflow-hidden',
           isDragging
-            ? 'border-primary bg-primary/5 scale-[1.02]'
-            : 'border-border/50 hover:border-primary/50 hover:bg-secondary/20'
+            ? 'border-primary bg-primary/5 scale-[1.01] shadow-2xl shadow-primary/10'
+            : 'border-border/40 hover:border-primary/30 hover:bg-muted/30'
         )}
       >
         <input
@@ -174,30 +180,33 @@ export function FileUploadZone({
           multiple
           accept=".csv,text/csv"
           onChange={handleFileInput}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
         />
 
-        <div className="flex flex-col items-center gap-4">
+        {/* Ambient Glow */}
+        <div className={cn(
+            "absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 pointer-events-none",
+            isDragging || "group-hover:opacity-100"
+        )} />
+
+        <div className="relative z-10 flex flex-col items-center gap-6">
           <div
             className={cn(
-              'flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-300',
-              isDragging ? 'bg-primary/20 scale-110' : 'bg-secondary/50'
+              'flex h-20 w-20 items-center justify-center rounded-2xl transition-all duration-500 shadow-xl',
+              isDragging ? 'bg-primary text-primary-foreground scale-110 rotate-3' : 'bg-background border border-border/50 text-muted-foreground group-hover:text-primary group-hover:border-primary/30 group-hover:scale-105'
             )}
           >
             <Upload
-              className={cn(
-                'h-8 w-8 transition-colors',
-                isDragging ? 'text-primary' : 'text-muted-foreground'
-              )}
+              className="h-8 w-8"
             />
           </div>
 
           <div>
-            <p className="text-lg font-medium text-foreground">
+            <p className="text-xl font-bold text-foreground">
               Drop your CSV files here
             </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              or click to browse • Supports batch upload
+            <p className="text-muted-foreground mt-2 max-w-sm mx-auto">
+              Drag and drop your files or click to browse. We support bulk uploads for efficiency.
             </p>
           </div>
         </div>
@@ -205,15 +214,16 @@ export function FileUploadZone({
 
       {/* File List */}
       {files.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-muted-foreground">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-semibold text-foreground">
               {files.length} file{files.length !== 1 ? 's' : ''} selected
             </h3>
             {hasFilesToUpload && (
               <Button
                 onClick={uploadFiles}
                 disabled={isUploading || !datasetId}
+                className="rounded-full px-6 shadow-lg shadow-primary/20"
               >
                 {isUploading ? (
                   <>
@@ -223,74 +233,81 @@ export function FileUploadZone({
                 ) : (
                   <>
                     <Upload className="h-4 w-4 mr-2" />
-                    Upload {pendingFiles.length} file
-                    {pendingFiles.length !== 1 ? 's' : ''}
+                    Upload All
                   </>
                 )}
               </Button>
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="grid gap-3">
             {files.map((file, index) => (
               <div
                 key={file.id}
                 className={cn(
-                  'flex items-center gap-4 p-4 rounded-xl border transition-all',
-                  'animate-in fade-in slide-in-from-bottom-2',
+                  'relative overflow-hidden flex items-center gap-4 p-4 rounded-2xl border transition-all duration-300',
+                  'animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards',
                   file.status === 'success' && 'bg-primary/5 border-primary/20',
                   file.status === 'error' &&
                     'bg-destructive/5 border-destructive/20',
                   file.status === 'pending' &&
-                    'bg-secondary/30 border-border/50',
+                    'bg-card/40 border-border/40 backdrop-blur-sm',
                   file.status === 'uploading' &&
-                    'bg-secondary/30 border-primary/30'
+                    'bg-card/60 border-primary/30'
                 )}
                 style={{ animationDelay: `${index * 50}ms` }}
               >
+                 {file.status === 'uploading' && (
+                    <div className="absolute inset-0 bg-primary/5">
+                        <div 
+                            className="h-full bg-primary/10 transition-all duration-300 ease-out" 
+                            style={{ width: `${file.progress}%` }} 
+                        />
+                    </div>
+                 )}
+
                 <div
                   className={cn(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
-                    file.status === 'success' && 'bg-primary/20',
-                    file.status === 'error' && 'bg-destructive/20',
-                    (file.status === 'pending' ||
-                      file.status === 'uploading') &&
-                      'bg-secondary/50'
+                    'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors',
+                    file.status === 'success' && 'bg-primary/20 text-primary',
+                    file.status === 'error' && 'bg-destructive/20 text-destructive',
+                    (file.status === 'pending' || file.status === 'uploading') &&
+                      'bg-secondary text-muted-foreground'
                   )}
                 >
                   {file.status === 'success' ? (
-                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                    <CheckCircle2 className="h-5 w-5" />
                   ) : file.status === 'error' ? (
-                    <AlertCircle className="h-5 w-5 text-destructive" />
+                    <AlertCircle className="h-5 w-5" />
                   ) : file.status === 'uploading' ? (
-                    <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+                    <FileSpreadsheet className="h-5 w-5" />
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {file.file.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
+                <div className="relative flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate text-foreground">
+                        {file.file.name}
+                    </p>
+                    {file.status === 'success' && <span className="text-[10px] font-bold text-primary uppercase tracking-wider bg-primary/10 px-1.5 py-0.5 rounded">Complete</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {(file.file.size / 1024).toFixed(1)} KB
                     {file.error && (
-                      <span className="text-destructive ml-2">
+                      <span className="text-destructive ml-2 font-medium">
                         • {file.error}
                       </span>
                     )}
                   </p>
-                  {file.status === 'uploading' && (
-                    <Progress value={file.progress} className="h-1 mt-2" />
-                  )}
                 </div>
 
                 {file.status === 'pending' && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="relative h-8 w-8 shrink-0 hover:bg-destructive/10 hover:text-destructive transition-colors rounded-full"
                     onClick={() => removeFile(file.id)}
                   >
                     <X className="h-4 w-4" />

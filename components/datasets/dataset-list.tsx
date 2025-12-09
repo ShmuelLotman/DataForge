@@ -6,6 +6,7 @@ import { CreateDatasetDialog } from './create-dataset-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, Search, Database, Sparkles } from 'lucide-react'
+import { Reveal } from '@/components/ui/reveal'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,77 +73,72 @@ export function DatasetList() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-balance">
-            Your Datasets
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage and explore your data collections
-          </p>
+      {/* Header Actions */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card/30 p-2 rounded-2xl border border-white/5 backdrop-blur-sm">
+        <div className="relative w-full sm:w-96 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <Input
+            placeholder="Search collections..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 h-10 bg-background/50 border-transparent focus:bg-background transition-all rounded-xl"
+          />
         </div>
 
         <Button
           onClick={handleCreateClick}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
+          className="w-full sm:w-auto rounded-xl h-10 px-6 shadow-lg shadow-primary/20"
         >
           <Plus className="h-4 w-4 mr-2" />
           New Dataset
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search datasets..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 bg-secondary/30 border-border/50 focus:border-primary/50"
-        />
-      </div>
-
       {/* Dataset Grid */}
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
-              className="h-36 rounded-xl bg-secondary/30 animate-pulse"
+              className="h-48 rounded-2xl bg-muted/20 animate-pulse"
             />
           ))}
         </div>
       ) : filteredDatasets.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
           {filteredDatasets.map((dataset, index) => (
-            <DatasetCard
-              key={dataset.id}
-              dataset={dataset}
-              onDelete={setDeleteId}
-              index={index}
-            />
+            <Reveal key={dataset.id} delay={index * 0.1}>
+              <DatasetCard
+                dataset={dataset}
+                onDelete={setDeleteId}
+                index={index}
+              />
+            </Reveal>
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-20 px-4">
-          <div className="relative mb-6">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20">
-              <Database className="h-10 w-10 text-primary" />
+        <Reveal>
+          <div className="flex flex-col items-center justify-center py-24 px-4 border border-dashed border-border/50 rounded-3xl bg-card/20">
+            <div className="relative mb-6">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Database className="h-10 w-10" />
+              </div>
+              <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-background border border-border shadow-sm">
+                <Plus className="h-4 w-4 text-muted-foreground" />
+              </div>
             </div>
-            <div className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-lg bg-background border border-border">
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
-            </div>
+            <h3 className="text-xl font-bold mb-2">No datasets found</h3>
+            <p className="text-muted-foreground text-center max-w-sm mb-8">
+              {search 
+                ? "No datasets match your search criteria. Try a different query." 
+                : "Create your first dataset to start organizing and visualizing your data."}
+            </p>
+            <Button onClick={handleCreateClick} size="lg" className="rounded-full px-8">
+              <Plus className="h-4 w-4 mr-2" />
+              Create Dataset
+            </Button>
           </div>
-          <h3 className="text-xl font-semibold mb-2">No datasets yet</h3>
-          <p className="text-muted-foreground text-center max-w-sm mb-6">
-            Create your first dataset to start organizing and visualizing your CSV data
-          </p>
-          <Button onClick={handleCreateClick}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Dataset
-          </Button>
-        </div>
+        </Reveal>
       )}
 
       {/* Create Dialog */}
