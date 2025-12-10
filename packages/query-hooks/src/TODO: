@@ -1,4 +1,5 @@
 TODO: 
-- [ ] Fix date stamps
-- [ ] Add date range seletion / filters on visualizations
-- [ ] Add ability to add to dashbaord from visualization page 
+- one dashboard should map to many datasets
+- implement pulling from gmail and auto uploading
+- date ranges in dashboard 
+- "up to current day" for day filters 

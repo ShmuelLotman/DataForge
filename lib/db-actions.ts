@@ -153,21 +153,25 @@ export async function addRows(
   datasetId: string,
   fileId: string,
   rows: Record<string, unknown>[],
-  schema: any[] // ColumnSchema[]
+  schema: any[], // ColumnSchema[]
+  rowOffset: number = 0
 ): Promise<void> {
   const dateCol = schema.find((c) => c.type === 'date')?.id
 
   const dbRows = rows.map((row, i) => ({
     dataset_id: datasetId,
     file_id: fileId,
-    row_number: i, // Note: This resets per batch if not careful. Caller should handle offset.
+    row_number: rowOffset + i,
     parsed_date:
       dateCol && row[dateCol] ? new Date(row[dateCol] as string) : null,
     data: row,
   }))
 
   const { error } = await supabase.from('data_rows').insert(dbRows)
-  if (error) throw error
+  if (error) {
+    console.error(`[addRows] Error inserting ${dbRows.length} rows:`, error)
+    throw error
+  }
 }
 
 export async function updateDataset(

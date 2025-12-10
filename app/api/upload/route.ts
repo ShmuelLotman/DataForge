@@ -4,6 +4,9 @@ import { processCSV, validateSchemaCompatibility } from '@/lib/csv-parser'
 import { requireAuth } from '@/lib/auth-server'
 import { generateDatasetEmbeddings } from '@/lib/ai/embeddings'
 
+// Increase timeout for large file uploads (up to 5 minutes)
+export const maxDuration = 300
+
 export async function POST(request: Request) {
   try {
     const session = await requireAuth()
@@ -27,55 +30,68 @@ export async function POST(request: Request) {
     let totalRows = 0
     let rowOffset = 0
     let finalSchema = dataset.canonicalSchema
+    const startTime = Date.now()
 
-    // Process CSV Stream
-    const result = await processCSV(file.stream(), async (rows, schema) => {
-      // Initialize on first batch
-      if (!fileRecord) {
-        // Validate Schema
-        if (dataset.canonicalSchema) {
-          const validation = validateSchemaCompatibility(
-            schema,
-            dataset.canonicalSchema
-          )
-          if (!validation.compatible) {
-            throw new Error(
-              `Schema mismatch: ${validation.differences.join(', ')}`
+    // Process CSV Stream with larger batch size (2500) for better performance with large files
+    // This reduces the number of database operations from 70 to ~28 for a 70k row file
+    const result = await processCSV(
+      file.stream(),
+      async (rows, schema) => {
+        const batchStartTime = Date.now()
+        // Initialize on first batch
+        if (!fileRecord) {
+          // Validate Schema
+          if (dataset.canonicalSchema) {
+            const validation = validateSchemaCompatibility(
+              schema,
+              dataset.canonicalSchema
             )
+            if (!validation.compatible) {
+              throw new Error(
+                `Schema mismatch: ${validation.differences.join(', ')}`
+              )
+            }
+          } else {
+            // Set canonical schema
+            await updateDataset(
+              datasetId,
+              { canonicalSchema: schema },
+              session.user.id
+            )
+            finalSchema = schema
           }
-        } else {
-          // Set canonical schema
-          await updateDataset(
+
+          // Create File Record
+          fileRecord = await addFile({
             datasetId,
-            { canonicalSchema: schema },
-            session.user.id
-          )
-          finalSchema = schema
+            originalFilename: file.name,
+            displayName: file.name.replace(/\.csv$/i, ''),
+            columnSchema: schema,
+            schemaFingerprint: 'pending', // We'll update later or compute incrementally
+            rowCount: 0,
+          })
         }
 
-        // Create File Record
-        fileRecord = await addFile({
-          datasetId,
-          originalFilename: file.name,
-          displayName: file.name.replace(/\.csv$/i, ''),
-          columnSchema: schema,
-          schemaFingerprint: 'pending', // We'll update later or compute incrementally
-          rowCount: 0,
-        })
-      }
+        // Insert Rows with proper row_number offset
+        await addRows(datasetId, fileRecord.id, rows, schema, rowOffset)
 
-      // Insert Rows
-      // We need to handle row_number offset
-      const rowsWithOffset = rows.map((r, i) => ({
-        ...r,
-        __rowNum: rowOffset + i + 1,
-      }))
+        totalRows += rows.length
+        rowOffset += rows.length
 
-      await addRows(datasetId, fileRecord.id, rows, schema)
+        const batchTime = Date.now() - batchStartTime
+        if (totalRows % 10000 === 0 || batchTime > 5000) {
+          console.log(
+            `[Upload] Processed ${totalRows} rows (batch took ${batchTime}ms)`
+          )
+        }
+      },
+      2500
+    ) // Increased batch size from default 1000 to 2500 for better performance
 
-      totalRows += rows.length
-      rowOffset += rows.length
-    })
+    const totalTime = Date.now() - startTime
+    console.log(
+      `[Upload] Completed processing ${result.rowCount} rows in ${totalTime}ms`
+    )
 
     // Generate AI embeddings for the dataset (async, don't block response)
     // This enables RAG-based context retrieval for the AI assistant
