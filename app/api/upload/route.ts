@@ -32,8 +32,10 @@ export async function POST(request: Request) {
     let finalSchema = dataset.canonicalSchema
     const startTime = Date.now()
 
-    // Process CSV Stream with larger batch size (2500) for better performance with large files
-    // This reduces the number of database operations from 70 to ~28 for a 70k row file
+    // Process CSV Stream with smaller batch size (250) for wide datasets
+    // Wide datasets (many columns) cause JSON payload expansion (3-5x CSV size)
+    // Smaller batches prevent payload size issues and PostgREST timeouts
+    // For 70k rows, this results in ~280 operations, but avoids timeouts
     const result = await processCSV(
       file.stream(),
       async (rows, schema) => {
@@ -81,12 +83,12 @@ export async function POST(request: Request) {
         const batchTime = Date.now() - batchStartTime
         if (totalRows % 10000 === 0 || batchTime > 5000) {
           console.log(
-            `[Upload] Processed ${totalRows} rows (batch took ${batchTime}ms)`
+            `[Upload] Processed ${totalRows} rows (batch of ${rows.length} took ${batchTime}ms)`
           )
         }
       },
-      2500
-    ) // Increased batch size from default 1000 to 2500 for better performance
+      250
+    ) // Reduced batch size to 250 to handle wide datasets (many columns cause JSON expansion)
 
     const totalTime = Date.now() - startTime
     console.log(

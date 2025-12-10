@@ -149,6 +149,21 @@ function mapFile(dbFile: any): DataFile {
   }
 }
 
+/**
+ * Estimate JSON payload size in bytes
+ */
+function estimatePayloadSize(rows: any[]): number {
+  // Rough estimation: JSON.stringify overhead + average row size
+  // This is conservative - actual size may be smaller due to compression
+  return JSON.stringify(rows).length
+}
+
+/**
+ * Maximum safe payload size (5MB) - PostgREST can handle larger, but we want to be safe
+ * and avoid timeouts. Wide datasets (many columns) cause significant JSON expansion.
+ */
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024 // 5MB
+
 export async function addRows(
   datasetId: string,
   fileId: string,
@@ -158,6 +173,7 @@ export async function addRows(
 ): Promise<void> {
   const dateCol = schema.find((c) => c.type === 'date')?.id
 
+  // Prepare all rows
   const dbRows = rows.map((row, i) => ({
     dataset_id: datasetId,
     file_id: fileId,
@@ -167,10 +183,71 @@ export async function addRows(
     data: row,
   }))
 
-  const { error } = await supabase.from('data_rows').insert(dbRows)
-  if (error) {
-    console.error(`[addRows] Error inserting ${dbRows.length} rows:`, error)
-    throw error
+  // Check payload size and chunk if necessary
+  const payloadSize = estimatePayloadSize(dbRows)
+
+  // Debug logging to understand payload expansion
+  if (payloadSize > 1024 * 1024) {
+    // Log if > 1MB
+    const avgRowSize = payloadSize / dbRows.length
+    const sampleRowSize = estimatePayloadSize([dbRows[0]])
+    const columnCount = Object.keys(rows[0] || {}).length
+    console.log(
+      `[addRows] Payload analysis: ${dbRows.length} rows, ${columnCount} columns, ` +
+        `${(payloadSize / 1024 / 1024).toFixed(2)}MB total, ` +
+        `${(avgRowSize / 1024).toFixed(2)}KB avg/row, ` +
+        `${(sampleRowSize / 1024).toFixed(2)}KB sample row`
+    )
+  }
+
+  if (payloadSize > MAX_PAYLOAD_SIZE && dbRows.length > 1) {
+    // Calculate safe chunk size (use 80% of max to be conservative)
+    const estimatedChunkSize = Math.max(
+      1,
+      Math.floor((dbRows.length * (MAX_PAYLOAD_SIZE * 0.8)) / payloadSize)
+    )
+    console.log(
+      `[addRows] Payload too large (${(payloadSize / 1024 / 1024).toFixed(
+        2
+      )}MB), splitting ${dbRows.length} rows into chunks`
+    )
+
+    // Insert in chunks, dynamically adjusting chunk size based on actual payload
+    let i = 0
+    while (i < dbRows.length) {
+      // Start with estimated chunk size
+      let chunkEnd = Math.min(i + estimatedChunkSize, dbRows.length)
+      let chunk = dbRows.slice(i, chunkEnd)
+      let chunkPayloadSize = estimatePayloadSize(chunk)
+
+      // Reduce chunk size if it's still too large
+      while (chunkPayloadSize > MAX_PAYLOAD_SIZE && chunk.length > 1) {
+        chunkEnd = i + Math.floor(chunk.length / 2)
+        chunk = dbRows.slice(i, chunkEnd)
+        chunkPayloadSize = estimatePayloadSize(chunk)
+      }
+
+      const { error } = await supabase.from('data_rows').insert(chunk)
+      if (error) {
+        console.error(
+          `[addRows] Error inserting chunk starting at row ${i} (${
+            chunk.length
+          } rows, ~${(chunkPayloadSize / 1024 / 1024).toFixed(2)}MB):`,
+          error
+        )
+        throw error
+      }
+
+      // Move to next chunk
+      i = chunkEnd
+    }
+  } else {
+    // Insert all at once if payload is safe
+    const { error } = await supabase.from('data_rows').insert(dbRows)
+    if (error) {
+      console.error(`[addRows] Error inserting ${dbRows.length} rows:`, error)
+      throw error
+    }
   }
 }
 
