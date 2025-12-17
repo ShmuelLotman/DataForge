@@ -19,7 +19,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
-import { useDatasetsQuery, useDeleteDatasetMutation } from '@dataforge/query-hooks'
+import {
+  useDatasetsQuery,
+  useDeleteDatasetMutation,
+} from '@dataforge/query-hooks'
 
 export function DatasetList() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -129,11 +132,15 @@ export function DatasetList() {
             </div>
             <h3 className="text-xl font-bold mb-2">No datasets found</h3>
             <p className="text-muted-foreground text-center max-w-sm mb-8">
-              {search 
-                ? "No datasets match your search criteria. Try a different query." 
-                : "Create your first dataset to start organizing and visualizing your data."}
+              {search
+                ? 'No datasets match your search criteria. Try a different query.'
+                : 'Create your first dataset to start organizing and visualizing your data.'}
             </p>
-            <Button onClick={handleCreateClick} size="lg" className="rounded-full px-8">
+            <Button
+              onClick={handleCreateClick}
+              size="lg"
+              className="rounded-full px-8"
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create Dataset
             </Button>
@@ -142,10 +149,7 @@ export function DatasetList() {
       )}
 
       {/* Create Dialog */}
-      <CreateDatasetDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-      />
+      <CreateDatasetDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

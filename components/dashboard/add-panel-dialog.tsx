@@ -28,16 +28,18 @@ import {
   AreaChart,
   PieChart,
   ScatterChart as ScatterIcon,
+  Database,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useAddPanelMutation } from '@dataforge/query-hooks'
+import { useAddPanelMutation, useDatasetsQuery } from '@dataforge/query-hooks'
 
 interface AddPanelDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   dashboardId: string
-  dataset: Dataset
+  /** Optional default dataset to pre-select */
+  defaultDatasetId?: string | null
 }
 
 const chartTypes: {
@@ -56,13 +58,30 @@ export function AddPanelDialog({
   open,
   onOpenChange,
   dashboardId,
-  dataset,
+  defaultDatasetId,
 }: AddPanelDialogProps) {
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>(
+    defaultDatasetId || ''
+  )
   const [title, setTitle] = useState('')
   const [chartType, setChartType] = useState<ChartType>('bar')
   const [xAxis, setXAxis] = useState('')
   const [yAxis, setYAxis] = useState<string[]>([])
   const [groupBy, setGroupBy] = useState<string>('none')
+
+  // Fetch all datasets for the dropdown
+  const { data: datasets = [], isLoading: datasetsLoading } = useDatasetsQuery(
+    {},
+    {
+      enabled: open,
+    }
+  )
+
+  // Get the selected dataset
+  const selectedDataset = useMemo(
+    () => datasets.find((d) => d.id === selectedDatasetId),
+    [datasets, selectedDatasetId]
+  )
 
   const addPanelMutation = useAddPanelMutation({
     onSuccess: () => {
@@ -76,7 +95,7 @@ export function AddPanelDialog({
     },
   })
 
-  const schema = dataset.canonicalSchema || []
+  const schema = selectedDataset?.canonicalSchema || []
 
   // Filter columns based on chart type
   const { xOptions, yOptions, groupOptions } = useMemo(() => {
@@ -112,6 +131,10 @@ export function AddPanelDialog({
   }, [chartType, schema])
 
   const handleSave = () => {
+    if (!selectedDatasetId) {
+      toast.error('Please select a dataset')
+      return
+    }
     if (!title.trim()) {
       toast.error('Please enter a panel title')
       return
@@ -132,12 +155,26 @@ export function AddPanelDialog({
       groupBy: groupBy !== 'none' ? groupBy : null,
     }
 
-    addPanelMutation.mutate({ dashboardId, title: title.trim(), config })
+    addPanelMutation.mutate({
+      dashboardId,
+      datasetId: selectedDatasetId,
+      title: title.trim(),
+      config,
+    })
   }
 
   const resetForm = () => {
+    setSelectedDatasetId(defaultDatasetId || '')
     setTitle('')
     setChartType('bar')
+    setXAxis('')
+    setYAxis([])
+    setGroupBy('none')
+  }
+
+  // Reset chart config when dataset changes
+  const handleDatasetChange = (datasetId: string) => {
+    setSelectedDatasetId(datasetId)
     setXAxis('')
     setYAxis([])
     setGroupBy('none')
@@ -174,6 +211,36 @@ export function AddPanelDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Dataset Selection */}
+          <div className="space-y-2">
+            <Label>Dataset</Label>
+            <Select
+              value={selectedDatasetId}
+              onValueChange={handleDatasetChange}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    datasetsLoading ? 'Loading...' : 'Select a dataset...'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {datasets.map((ds) => (
+                  <SelectItem key={ds.id} value={ds.id}>
+                    <div className="flex items-center gap-2">
+                      <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{ds.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({ds.rowCount.toLocaleString()} rows)
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Panel Title */}
           <div className="space-y-2">
             <Label htmlFor="title">Panel Title</Label>
@@ -182,7 +249,7 @@ export function AddPanelDialog({
               placeholder="e.g., Sales by Region"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              autoFocus
+              disabled={!selectedDatasetId}
             />
           </div>
 
@@ -196,6 +263,7 @@ export function AddPanelDialog({
                   variant={chartType === type.value ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => handleChartTypeChange(type.value)}
+                  disabled={!selectedDatasetId}
                   className={cn(
                     'flex flex-col items-center gap-1 h-auto py-2',
                     chartType === type.value &&
@@ -286,6 +354,7 @@ export function AddPanelDialog({
             onClick={handleSave}
             disabled={
               addPanelMutation.isPending ||
+              !selectedDatasetId ||
               !title.trim() ||
               !xAxis ||
               yAxis.length === 0

@@ -11,18 +11,18 @@ export async function POST(
     const session = await requireAuth()
     const { id: dashboardId } = await params
     const body = await request.json()
-    const { title, config } = body
+    const { datasetId, title, config } = body
 
-    if (!title || !config) {
+    if (!datasetId || !title || !config) {
       return NextResponse.json(
-        { error: 'Missing required fields: title, config' },
+        { error: 'Missing required fields: datasetId, title, config' },
         { status: 400 }
       )
     }
 
     const panel = await addPanel(
       dashboardId,
-      { title, config },
+      { datasetId, title, config },
       session.user.id
     )
 
@@ -36,6 +36,9 @@ export async function POST(
         { error: 'Dashboard not found' },
         { status: 404 }
       )
+    }
+    if (error instanceof Error && error.message === 'Dataset not found') {
+      return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
     }
     console.error('Error adding panel:', error)
     return NextResponse.json({ error: 'Failed to add panel' }, { status: 500 })

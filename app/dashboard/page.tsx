@@ -18,12 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  LayoutDashboard,
-  Search,
-  Plus,
-  Sparkles,
-} from 'lucide-react'
+import { LayoutDashboard, Search, Plus, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { Reveal } from '@/components/ui/reveal'
@@ -92,68 +87,68 @@ export default function DashboardListPage() {
         <main className="relative pt-32 pb-20 px-6 sm:px-8">
           <div className="mx-auto max-w-7xl">
             <div className="space-y-8">
-                {/* Header Actions */}
-                <Reveal width="100%">
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card/30 p-2 rounded-2xl border border-white/5 backdrop-blur-sm mb-8">
-                        <div className="relative w-full sm:w-96 group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                            <Input
-                                placeholder="Search dashboards..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="pl-10 h-10 bg-background/50 border-transparent focus:bg-background transition-all rounded-xl"
-                            />
-                        </div>
+              {/* Header Actions */}
+              <Reveal width="100%">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card/30 p-2 rounded-2xl border border-white/5 backdrop-blur-sm mb-8">
+                  <div className="relative w-full sm:w-96 group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                    <Input
+                      placeholder="Search dashboards..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-10 h-10 bg-background/50 border-transparent focus:bg-background transition-all rounded-xl"
+                    />
+                  </div>
 
-                        <Button
-                            onClick={() => setCreateOpen(true)}
-                            className="w-full sm:w-auto rounded-xl h-10 px-6 shadow-lg shadow-primary/20"
-                        >
-                            <Plus className="h-4 w-4 mr-2" />
-                            New Dashboard
-                        </Button>
-                    </div>
+                  <Button
+                    onClick={() => setCreateOpen(true)}
+                    className="w-full sm:w-auto rounded-xl h-10 px-6 shadow-lg shadow-primary/20"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Dashboard
+                  </Button>
+                </div>
+              </Reveal>
+
+              {/* Content */}
+              {isLoading ? (
+                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-48 rounded-2xl bg-muted/20 animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : filteredDashboards.length === 0 ? (
+                <Reveal>
+                  <EmptyState
+                    hasDashboards={dashboards.length > 0}
+                    onCreate={() => setCreateOpen(true)}
+                  />
                 </Reveal>
-
-                {/* Content */}
-                {isLoading ? (
-                  <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                    {[1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className="h-48 rounded-2xl bg-muted/20 animate-pulse"
+              ) : (
+                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                  {filteredDashboards.map((dashboard, index) => (
+                    <Reveal key={dashboard.id} delay={index * 0.1}>
+                      <DashboardCard
+                        dashboard={dashboard}
+                        index={index}
+                        onEdit={() => {
+                          // TODO: Open edit dialog
+                          // Since the dialog logic wasn't fully implemented in the original file (just comment),
+                          // we'll leave it as is, or you might want to implement it.
+                          // For now, I'll assume it's handled elsewhere or upcoming.
+                        }}
+                        onDelete={setDeleteId}
+                        onDuplicate={() => {
+                          // TODO: Handle duplicate
+                        }}
                       />
-                    ))}
-                  </div>
-                ) : filteredDashboards.length === 0 ? (
-                  <Reveal>
-                      <EmptyState
-                        hasDashboards={dashboards.length > 0}
-                        onCreate={() => setCreateOpen(true)}
-                      />
-                  </Reveal>
-                ) : (
-                  <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredDashboards.map((dashboard, index) => (
-                      <Reveal key={dashboard.id} delay={index * 0.1}>
-                        <DashboardCard
-                            dashboard={dashboard}
-                            index={index}
-                            onEdit={() => {
-                                // TODO: Open edit dialog
-                                // Since the dialog logic wasn't fully implemented in the original file (just comment),
-                                // we'll leave it as is, or you might want to implement it.
-                                // For now, I'll assume it's handled elsewhere or upcoming.
-                            }}
-                            onDelete={setDeleteId}
-                            onDuplicate={() => {
-                                // TODO: Handle duplicate
-                            }}
-                        />
-                      </Reveal>
-                    ))}
-                  </div>
-                )}
+                    </Reveal>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -202,7 +197,7 @@ function EmptyState({
     return (
       <div className="text-center py-12 border border-dashed border-border/50 rounded-3xl bg-card/20">
         <p className="text-muted-foreground">
-            No dashboards match your search.
+          No dashboards match your search.
         </p>
       </div>
     )

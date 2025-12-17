@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import type {
-  DashboardPanel,
+  DashboardPanelWithDataset,
   DashboardLayoutConfig,
-  Dataset,
+  ChartFilter,
 } from '@/lib/types'
 import { DEFAULT_DASHBOARD_LAYOUT } from '@/lib/types'
 import { DashboardPanelComponent } from './dashboard-panel'
@@ -12,16 +12,17 @@ import { Button } from '@/components/ui/button'
 import { LayoutGrid, Columns2, Columns3, Columns4 } from 'lucide-react'
 
 interface PanelGridProps {
-  panels: DashboardPanel[]
-  dataset: Dataset
-  onEditPanel: (panel: DashboardPanel) => void
+  panels: DashboardPanelWithDataset[]
+  /** Global filters to apply to all panels (only affects panels with matching columns) */
+  globalFilters?: ChartFilter[]
+  onEditPanel: (panel: DashboardPanelWithDataset) => void
   onDeletePanel: (panelId: string) => void
-  onExpandPanel: (panel: DashboardPanel) => void
+  onExpandPanel: (panel: DashboardPanelWithDataset) => void
 }
 
 export function PanelGrid({
   panels,
-  dataset,
+  globalFilters = [],
   onEditPanel,
   onDeletePanel,
   onExpandPanel,
@@ -84,7 +85,7 @@ export function PanelGrid({
           >
             <DashboardPanelComponent
               panel={panel}
-              dataset={dataset}
+              globalFilters={globalFilters}
               onEdit={onEditPanel}
               onDelete={onDeletePanel}
               onExpand={onExpandPanel}

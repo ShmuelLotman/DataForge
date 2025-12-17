@@ -1,25 +1,25 @@
 /**
  * @dataforge/query-hooks
- * 
+ *
  * TanStack Query hooks for the DataForge application.
  * Provides type-safe, cached data fetching with automatic cache invalidation.
- * 
+ *
  * @example
  * ```tsx
  * // 1. Wrap your app with QueryProvider
  * import { QueryProvider } from '@dataforge/query-hooks'
- * 
+ *
  * function App({ children }) {
  *   return <QueryProvider>{children}</QueryProvider>
  * }
- * 
+ *
  * // 2. Use hooks in your components
  * import { useDatasetsQuery, useCreateDatasetMutation } from '@dataforge/query-hooks'
- * 
+ *
  * function DatasetsList() {
  *   const { data: datasets, isLoading } = useDatasetsQuery()
  *   const createDataset = useCreateDatasetMutation()
- *   
+ *
  *   // ...
  * }
  * ```
@@ -64,6 +64,19 @@ export {
   type UpdateDashboardInput,
   type DashboardsListFilters,
 } from './hooks/use-dashboards'
+
+// ============================================
+// DASHBOARD FILTER HOOKS
+// ============================================
+export {
+  useDashboardFilters,
+  useDateRangeFilter,
+  createDateRangeFilter,
+  useColumnValuesQuery,
+  type UseDashboardFiltersOptions,
+  type UseDashboardFiltersReturn,
+  type FilterPreset,
+} from './hooks/use-dashboard-filters'
 
 // ============================================
 // PANEL HOOKS

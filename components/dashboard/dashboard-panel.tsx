@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import type { DashboardPanel, Dataset } from '@/lib/types'
+import type { DashboardPanelWithDataset, ChartFilter } from '@/lib/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,7 +10,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Pencil, Trash2, Maximize2, Loader2 } from 'lucide-react'
+import {
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Maximize2,
+  Loader2,
+  Database,
+} from 'lucide-react'
 import { ChartRenderer } from './chart-renderer'
 import {
   useChartDataQuery,
@@ -18,20 +25,65 @@ import {
 } from '@dataforge/query-hooks'
 
 interface DashboardPanelComponentProps {
-  panel: DashboardPanel
-  dataset: Dataset
-  onEdit: (panel: DashboardPanel) => void
+  panel: DashboardPanelWithDataset
+  /** Global filters to merge with panel-specific filters */
+  globalFilters?: ChartFilter[]
+  onEdit: (panel: DashboardPanelWithDataset) => void
   onDelete: (panelId: string) => void
-  onExpand: (panel: DashboardPanel) => void
+  onExpand: (panel: DashboardPanelWithDataset) => void
 }
 
 export function DashboardPanelComponent({
   panel,
-  dataset,
+  globalFilters = [],
   onEdit,
   onDelete,
   onExpand,
 }: DashboardPanelComponentProps) {
+  // Panel now includes its own dataset info
+  const { dataset } = panel
+
+  // Get column IDs from this panel's dataset schema
+  const datasetColumnIds = useMemo(() => {
+    const schema = dataset.canonicalSchema || []
+    return new Set(schema.map((col) => col.id))
+  }, [dataset.canonicalSchema])
+
+  // Serialize filters for stable dependency comparison
+  const globalFiltersKey = JSON.stringify(globalFilters)
+  const panelFiltersKey = JSON.stringify(panel.config.filters || [])
+  const columnIdsKey = JSON.stringify([...datasetColumnIds])
+
+  // Merge global filters with panel-specific filters
+  // Only include global filters for columns that exist in this panel's dataset
+  // Panel filters take precedence over global filters
+  const mergedFilters = useMemo(() => {
+    const panelFilters = panel.config.filters || []
+
+    // Filter global filters to only those with columns in this dataset
+    const applicableGlobalFilters = globalFilters.filter((f) =>
+      datasetColumnIds.has(f.column)
+    )
+
+    if (!applicableGlobalFilters.length) return panelFilters
+
+    const merged = [...applicableGlobalFilters]
+    for (const pf of panelFilters) {
+      const existingIdx = merged.findIndex((f) => f.column === pf.column)
+      if (existingIdx >= 0) {
+        merged[existingIdx] = pf // Panel filter overrides
+      } else {
+        merged.push(pf)
+      }
+    }
+    return merged
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalFiltersKey, panelFiltersKey, columnIdsKey])
+
+  // Serialize yAxis for stable dependency comparison
+  const yAxisKey = JSON.stringify(panel.config.yAxis)
+  const mergedFiltersKey = JSON.stringify(mergedFilters)
+
   // Memoize query config to prevent unnecessary refetches
   // TanStack Query uses deep comparison on query keys, so this ensures stable references
   const queryConfig = useMemo((): ChartQueryConfig | null => {
@@ -47,15 +99,16 @@ export function DashboardPanelComponent({
       })),
       groupBy: panel.config.groupBy || undefined,
       bucket: panel.config.bucket || undefined,
-      filters: panel.config.filters,
+      filters: mergedFilters,
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     panel.config.xAxis,
-    panel.config.yAxis,
+    yAxisKey,
     panel.config.aggregation,
     panel.config.groupBy,
     panel.config.bucket,
-    panel.config.filters,
+    mergedFiltersKey,
   ])
 
   const {
@@ -77,9 +130,17 @@ export function DashboardPanelComponent({
   return (
     <Card className="h-full flex flex-col group">
       <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base font-medium truncate pr-2">
-          {panel.title}
-        </CardTitle>
+        <div className="flex-1 min-w-0 pr-2">
+          <CardTitle className="text-base font-medium truncate">
+            {panel.title}
+          </CardTitle>
+          <div className="flex items-center gap-1 mt-0.5">
+            <Database className="h-3 w-3 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground truncate">
+              {dataset.name}
+            </span>
+          </div>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

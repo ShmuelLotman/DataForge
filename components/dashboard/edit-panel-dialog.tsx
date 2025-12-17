@@ -3,9 +3,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import type {
   ChartConfig,
-  Dataset,
   ChartType,
-  DashboardPanel,
+  DashboardPanelWithDataset,
 } from '@/lib/types'
 import {
   Dialog,
@@ -33,16 +32,19 @@ import {
   AreaChart,
   PieChart,
   ScatterChart as ScatterIcon,
+  Database,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useUpdatePanelMutation } from '@dataforge/query-hooks'
+import {
+  useUpdatePanelMutation,
+  useDatasetsQuery,
+} from '@dataforge/query-hooks'
 
 interface EditPanelDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  panel: DashboardPanel
-  dataset: Dataset
+  panel: DashboardPanelWithDataset
 }
 
 const chartTypes: {
@@ -61,13 +63,29 @@ export function EditPanelDialog({
   open,
   onOpenChange,
   panel,
-  dataset,
 }: EditPanelDialogProps) {
+  const [selectedDatasetId, setSelectedDatasetId] = useState(panel.datasetId)
   const [title, setTitle] = useState(panel.title)
   const [chartType, setChartType] = useState<ChartType>(panel.config.chartType)
   const [xAxis, setXAxis] = useState(panel.config.xAxis)
   const [yAxis, setYAxis] = useState<string[]>(panel.config.yAxis)
   const [groupBy, setGroupBy] = useState<string>(panel.config.groupBy || 'none')
+
+  // Fetch all datasets for the dropdown
+  const { data: datasets = [], isLoading: datasetsLoading } = useDatasetsQuery(
+    {},
+    {
+      enabled: open,
+    }
+  )
+
+  // Get the selected dataset (use panel.dataset if same ID, otherwise find from list)
+  const selectedDataset = useMemo(() => {
+    if (selectedDatasetId === panel.datasetId) {
+      return panel.dataset
+    }
+    return datasets.find((d) => d.id === selectedDatasetId)
+  }, [datasets, selectedDatasetId, panel.datasetId, panel.dataset])
 
   const updatePanelMutation = useUpdatePanelMutation({
     onSuccess: () => {
@@ -80,16 +98,20 @@ export function EditPanelDialog({
     },
   })
 
-  // Reset form when panel changes
+  // Reset form when dialog opens with a (potentially different) panel
   useEffect(() => {
-    setTitle(panel.title)
-    setChartType(panel.config.chartType)
-    setXAxis(panel.config.xAxis)
-    setYAxis(panel.config.yAxis)
-    setGroupBy(panel.config.groupBy || 'none')
-  }, [panel])
+    if (open) {
+      setSelectedDatasetId(panel.datasetId)
+      setTitle(panel.title)
+      setChartType(panel.config.chartType)
+      setXAxis(panel.config.xAxis)
+      setYAxis(panel.config.yAxis)
+      setGroupBy(panel.config.groupBy || 'none')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, panel.id])
 
-  const schema = dataset.canonicalSchema || []
+  const schema = selectedDataset?.canonicalSchema || []
 
   // Filter columns based on chart type
   const { xOptions, yOptions, groupOptions } = useMemo(() => {
@@ -145,10 +167,17 @@ export function EditPanelDialog({
       groupBy: groupBy !== 'none' ? groupBy : null,
     }
 
+    // Only include datasetId if it changed
+    const datasetIdChanged = selectedDatasetId !== panel.datasetId
+
     updatePanelMutation.mutate({
       dashboardId: panel.dashboardId,
       panelId: panel.id,
-      data: { title: title.trim(), config },
+      data: {
+        title: title.trim(),
+        config,
+        ...(datasetIdChanged && { datasetId: selectedDatasetId }),
+      },
     })
   }
 
@@ -168,6 +197,14 @@ export function EditPanelDialog({
     setGroupBy('none')
   }
 
+  // Reset chart config when dataset changes
+  const handleDatasetChange = (datasetId: string) => {
+    setSelectedDatasetId(datasetId)
+    setXAxis('')
+    setYAxis([])
+    setGroupBy('none')
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -176,11 +213,41 @@ export function EditPanelDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Dataset Selection */}
+          <div className="space-y-2">
+            <Label>Dataset</Label>
+            <Select
+              value={selectedDatasetId}
+              onValueChange={handleDatasetChange}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    datasetsLoading ? 'Loading...' : 'Select a dataset...'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {datasets.map((ds) => (
+                  <SelectItem key={ds.id} value={ds.id}>
+                    <div className="flex items-center gap-2">
+                      <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{ds.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({ds.rowCount.toLocaleString()} rows)
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Panel Title */}
           <div className="space-y-2">
-            <Label htmlFor="title">Panel Title</Label>
+            <Label htmlFor="edit-title">Panel Title</Label>
             <Input
-              id="title"
+              id="edit-title"
               placeholder="e.g., Sales by Region"
               value={title}
               onChange={(e) => setTitle(e.target.value)}

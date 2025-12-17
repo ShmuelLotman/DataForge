@@ -6,7 +6,7 @@ import {
 import axios, { AxiosError } from 'axios'
 import { queryKeys } from '../keys'
 import type {
-  DashboardPanel,
+  DashboardPanelWithDataset,
   ChartConfig,
   DashboardWithPanels,
 } from '@dataforge/types'
@@ -17,6 +17,7 @@ import type {
 
 export interface CreatePanelInput {
   dashboardId: string
+  datasetId: string
   title: string
   config: ChartConfig
 }
@@ -27,6 +28,7 @@ export interface UpdatePanelInput {
   data: {
     title?: string
     config?: ChartConfig
+    datasetId?: string
   }
 }
 
@@ -54,6 +56,7 @@ export interface ReorderPanelsInput {
  * addPanel.mutate(
  *   {
  *     dashboardId,
+ *     datasetId,
  *     title: 'Monthly Revenue',
  *     config: {
  *       chartType: 'line',
@@ -68,15 +71,24 @@ export interface ReorderPanelsInput {
  * ```
  */
 export function useAddPanelMutation(
-  options?: UseMutationOptions<DashboardPanel, AxiosError, CreatePanelInput>
+  options?: UseMutationOptions<
+    DashboardPanelWithDataset,
+    AxiosError,
+    CreatePanelInput
+  >
 ) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ dashboardId, title, config }: CreatePanelInput) => {
-      const { data } = await axios.post<DashboardPanel>(
+    mutationFn: async ({
+      dashboardId,
+      datasetId,
+      title,
+      config,
+    }: CreatePanelInput) => {
+      const { data } = await axios.post<DashboardPanelWithDataset>(
         `/api/dashboards/${dashboardId}/panels`,
-        { title, config }
+        { datasetId, title, config }
       )
       return data
     },
@@ -119,7 +131,7 @@ export function useAddPanelMutation(
 }
 
 /**
- * Update a panel's title or config
+ * Update a panel's title, config, or dataset
  *
  * @example
  * ```tsx
@@ -136,7 +148,11 @@ export function useAddPanelMutation(
  * ```
  */
 export function useUpdatePanelMutation(
-  options?: UseMutationOptions<DashboardPanel, AxiosError, UpdatePanelInput>
+  options?: UseMutationOptions<
+    DashboardPanelWithDataset,
+    AxiosError,
+    UpdatePanelInput
+  >
 ) {
   const queryClient = useQueryClient()
 
@@ -146,7 +162,7 @@ export function useUpdatePanelMutation(
       panelId,
       data: updateData,
     }: UpdatePanelInput) => {
-      const { data } = await axios.patch<DashboardPanel>(
+      const { data } = await axios.patch<DashboardPanelWithDataset>(
         `/api/dashboards/${dashboardId}/panels/${panelId}`,
         updateData
       )
@@ -312,7 +328,7 @@ export function useReorderPanelsMutation(
               const panel = panelMap.get(id)
               return panel ? { ...panel, sortOrder: index } : null
             })
-            .filter((p): p is DashboardPanel => p !== null)
+            .filter((p): p is DashboardPanelWithDataset => p !== null)
 
           return {
             ...old,

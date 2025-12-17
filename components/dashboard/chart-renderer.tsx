@@ -22,6 +22,7 @@ import {
   Scatter,
 } from 'recharts'
 import { formatDateLabel, isDateString } from '@/lib/date-utils'
+import { KPICard } from './kpi-card'
 
 interface ChartRendererProps {
   data: Record<string, string | number>[]
@@ -119,6 +120,16 @@ export function ChartRenderer({
 
   const chartType = config.chartType
 
+  // Handle KPI type separately (doesn't need processed data)
+  if (chartType === 'kpi') {
+    // For KPI, we expect a single aggregated value
+    // The data should have one row with the y-axis column
+    const yColumn = config.yAxis[0]
+    const value = data[0]?.[yColumn] as number | undefined
+
+    return <KPICard value={value} config={config} height={height} />
+  }
+
   switch (chartType) {
     case 'line':
       return (
@@ -164,24 +175,52 @@ export function ChartRenderer({
       )
 
     case 'bar':
+      // Support horizontal layout and stacked bars
+      const isHorizontal = config.layout === 'horizontal'
+      const isStacked = config.stacked === true
+
       return (
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={processedData}>
+          <BarChart
+            data={processedData}
+            layout={isHorizontal ? 'vertical' : 'horizontal'}
+          >
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
             />
-            <XAxis
-              dataKey="name"
-              stroke="oklch(0.65 0.01 260)"
-              fontSize={11}
-              tickLine={false}
-            />
-            <YAxis
-              stroke="oklch(0.65 0.01 260)"
-              fontSize={11}
-              tickLine={false}
-            />
+            {isHorizontal ? (
+              <>
+                <XAxis
+                  type="number"
+                  stroke="oklch(0.65 0.01 260)"
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  stroke="oklch(0.65 0.01 260)"
+                  fontSize={11}
+                  tickLine={false}
+                  width={100}
+                />
+              </>
+            ) : (
+              <>
+                <XAxis
+                  dataKey="name"
+                  stroke="oklch(0.65 0.01 260)"
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <YAxis
+                  stroke="oklch(0.65 0.01 260)"
+                  fontSize={11}
+                  tickLine={false}
+                />
+              </>
+            )}
             <Tooltip
               contentStyle={{
                 backgroundColor: 'oklch(0.16 0.01 260)',
@@ -196,7 +235,8 @@ export function ChartRenderer({
                 key={key}
                 dataKey={key}
                 fill={CHART_COLORS[i % CHART_COLORS.length]}
-                radius={[4, 4, 0, 0]}
+                radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                stackId={isStacked ? 'stack' : undefined}
               />
             ))}
           </BarChart>

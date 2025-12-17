@@ -55,9 +55,54 @@ export interface ParsedCSV {
 // CHART CONFIGURATION
 // ============================================
 
-export type ChartType = 'line' | 'bar' | 'area' | 'pie' | 'scatter'
-export type AggregationType = 'sum' | 'avg' | 'count' | 'min' | 'max'
+export type ChartType =
+  | 'line'
+  | 'bar'
+  | 'area'
+  | 'pie'
+  | 'scatter'
+  | 'kpi'
+  | 'table'
+export type AggregationType =
+  | 'sum'
+  | 'avg'
+  | 'count'
+  | 'count_distinct'
+  | 'min'
+  | 'max'
 export type BucketType = 'day' | 'week' | 'month'
+
+// All supported filter operators
+export type FilterOperator =
+  | 'eq'
+  | 'neq' // equality
+  | 'in'
+  | 'not_in' // array membership
+  | 'gte'
+  | 'lte'
+  | 'gt'
+  | 'lt'
+  | 'between' // comparisons
+  | 'contains'
+  | 'starts_with' // string matching
+  | 'is_null'
+  | 'is_not_null' // null checks
+
+// Type hint for filter comparisons
+export type FilterValueType = 'string' | 'date' | 'number'
+
+export interface ChartFilter {
+  column: string
+  op: FilterOperator
+  value:
+    | string
+    | string[]
+    | number
+    | number[]
+    | [string, string]
+    | [number, number]
+  type?: FilterValueType // Optional type hint for gte/lte/between
+}
 
 export interface ChartConfig {
   chartType: ChartType
@@ -70,11 +115,12 @@ export interface ChartConfig {
     end: string
   } | null
   bucket?: BucketType | null
-  filters?: Array<{
-    column: string
-    op: 'eq' | 'in' | 'gte' | 'lte'
-    value: string | string[]
-  }>
+  filters?: ChartFilter[]
+  // Chart-specific options
+  stacked?: boolean // For bar charts
+  layout?: 'vertical' | 'horizontal' // For bar charts
+  format?: 'number' | 'currency' | 'percent' // For KPI display
+  label?: string // For KPI display label
 }
 
 // Legacy ChartConfig for backwards compatibility
@@ -107,6 +153,7 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutConfig = {
 export interface DashboardPanel {
   id: string
   dashboardId: string
+  datasetId: string // Each panel can reference a different dataset
   title: string
   config: ChartConfig
   sortOrder: number // Simple ordering (panels render in this order)
@@ -114,19 +161,29 @@ export interface DashboardPanel {
   updatedAt: Date
 }
 
+// Panel with its dataset info included (for rendering)
+export interface DashboardPanelWithDataset extends DashboardPanel {
+  dataset: {
+    id: string
+    name: string
+    canonicalSchema: ColumnSchema[] | null
+  }
+}
+
 export interface Dashboard {
   id: string
   userId: string
-  datasetId: string
+  datasetId?: string | null // Optional default dataset (legacy, kept for backwards compat)
   name: string
   description?: string
+  defaultFilters?: ChartFilter[] // Global filters applied to all panels
   createdAt: Date
   updatedAt: Date
 }
 
 // Dashboard with all panels included
 export interface DashboardWithPanels extends Dashboard {
-  panels: DashboardPanel[]
+  panels: DashboardPanelWithDataset[]
 }
 
 // Dashboard with dataset info (for list views)
@@ -135,8 +192,19 @@ export interface DashboardWithDataset extends Dashboard {
     id: string
     name: string
     rowCount: number
-  }
+  } | null
   panelCount: number
+}
+
+// Filter preset for quick filter switching
+export interface DashboardFilterPreset {
+  id: string
+  dashboardId: string
+  name: string
+  filters: ChartFilter[]
+  isDefault: boolean
+  createdAt: Date
+  updatedAt: Date
 }
 
 // ============================================
@@ -185,6 +253,11 @@ export interface AIChartConfig {
   } | null
   aggregation?: AggregationType
   title?: string
+  filters?: ChartFilter[]
+  stacked?: boolean
+  layout?: 'vertical' | 'horizontal'
+  format?: 'number' | 'currency' | 'percent'
+  label?: string
 }
 
 // Context retrieved via RAG

@@ -5,9 +5,11 @@ import type {
   DataRow,
   Dashboard,
   DashboardPanel,
+  DashboardPanelWithDataset,
   DashboardWithPanels,
   DashboardWithDataset,
   ChartConfig,
+  ChartFilter,
 } from './types'
 
 export async function getDatasets(userId: string): Promise<Dataset[]> {
@@ -419,11 +421,13 @@ export async function getDashboards(
 
   return data.map((row: any) => ({
     ...transformDashboard(row),
-    dataset: {
-      id: row.datasets.id,
-      name: row.datasets.name,
-      rowCount: row.datasets.data_rows?.[0]?.count || 0,
-    },
+    dataset: row.datasets
+      ? {
+          id: row.datasets.id,
+          name: row.datasets.name,
+          rowCount: row.datasets.data_rows?.[0]?.count || 0,
+        }
+      : null,
     panelCount: row.dashboard_panels?.length || 0,
   }))
 }
@@ -437,7 +441,14 @@ export async function getDashboard(
     .select(
       `
       *,
-      dashboard_panels (*)
+      dashboard_panels (
+        *,
+        datasets:dataset_id (
+          id,
+          name,
+          canonical_schema
+        )
+      )
     `
     )
     .eq('id', id)
@@ -452,16 +463,17 @@ export async function getDashboard(
   return {
     ...transformDashboard(data),
     panels: (data.dashboard_panels || [])
-      .map(transformPanel)
+      .map(transformPanelWithDataset)
       .sort(
-        (a: DashboardPanel, b: DashboardPanel) => a.sortOrder - b.sortOrder
+        (a: DashboardPanelWithDataset, b: DashboardPanelWithDataset) =>
+          a.sortOrder - b.sortOrder
       ),
   }
 }
 
 export async function createDashboard(
   dashboard: {
-    datasetId: string
+    datasetId?: string | null
     name: string
     description?: string
   },
@@ -471,7 +483,7 @@ export async function createDashboard(
     .from('dashboards')
     .insert({
       user_id: userId,
-      dataset_id: dashboard.datasetId,
+      dataset_id: dashboard.datasetId || null,
       name: dashboard.name,
       description: dashboard.description,
     })
@@ -484,7 +496,7 @@ export async function createDashboard(
 
 export async function updateDashboard(
   id: string,
-  updates: Partial<Pick<Dashboard, 'name' | 'description'>>,
+  updates: Partial<Pick<Dashboard, 'name' | 'description' | 'defaultFilters'>>,
   userId: string
 ): Promise<Dashboard> {
   const { data, error } = await supabase
@@ -494,6 +506,9 @@ export async function updateDashboard(
       ...(updates.description !== undefined && {
         description: updates.description,
       }),
+      ...(updates.defaultFilters !== undefined && {
+        default_filters: updates.defaultFilters,
+      }),
     })
     .eq('id', id)
     .eq('user_id', userId)
@@ -502,6 +517,17 @@ export async function updateDashboard(
 
   if (error) throw error
   return transformDashboard(data)
+}
+
+/**
+ * Update only the default filters for a dashboard
+ */
+export async function updateDashboardFilters(
+  id: string,
+  filters: ChartFilter[],
+  userId: string
+): Promise<Dashboard> {
+  return updateDashboard(id, { defaultFilters: filters }, userId)
 }
 
 export async function deleteDashboard(
@@ -524,14 +550,19 @@ export async function deleteDashboard(
 export async function addPanel(
   dashboardId: string,
   panel: {
+    datasetId: string
     title: string
     config: ChartConfig
   },
   userId: string
-): Promise<DashboardPanel> {
+): Promise<DashboardPanelWithDataset> {
   // First verify dashboard ownership
   const dashboard = await getDashboard(dashboardId, userId)
   if (!dashboard) throw new Error('Dashboard not found')
+
+  // Verify dataset ownership
+  const dataset = await getDataset(panel.datasetId, userId)
+  if (!dataset) throw new Error('Dataset not found')
 
   // Get next sort order
   const maxSort = Math.max(0, ...dashboard.panels.map((p) => p.sortOrder))
@@ -540,22 +571,32 @@ export async function addPanel(
     .from('dashboard_panels')
     .insert({
       dashboard_id: dashboardId,
+      dataset_id: panel.datasetId,
       title: panel.title,
       config: panel.config,
       sort_order: maxSort + 1,
     })
-    .select()
+    .select(
+      `
+      *,
+      datasets:dataset_id (
+        id,
+        name,
+        canonical_schema
+      )
+    `
+    )
     .single()
 
   if (error) throw error
-  return transformPanel(data)
+  return transformPanelWithDataset(data)
 }
 
 export async function updatePanel(
   panelId: string,
-  updates: Partial<Pick<DashboardPanel, 'title' | 'config' | 'sortOrder'>>,
+  updates: Partial<Pick<DashboardPanel, 'title' | 'config' | 'sortOrder' | 'datasetId'>>,
   userId: string
-): Promise<DashboardPanel> {
+): Promise<DashboardPanelWithDataset> {
   // Verify ownership through dashboard
   const { data: panel } = await supabase
     .from('dashboard_panels')
@@ -568,19 +609,35 @@ export async function updatePanel(
   const dashboard = await getDashboard(panel.dashboard_id, userId)
   if (!dashboard) throw new Error('Unauthorized')
 
+  // If changing dataset, verify ownership
+  if (updates.datasetId) {
+    const dataset = await getDataset(updates.datasetId, userId)
+    if (!dataset) throw new Error('Dataset not found')
+  }
+
   const { data, error } = await supabase
     .from('dashboard_panels')
     .update({
       ...(updates.title && { title: updates.title }),
       ...(updates.config && { config: updates.config }),
       ...(updates.sortOrder !== undefined && { sort_order: updates.sortOrder }),
+      ...(updates.datasetId && { dataset_id: updates.datasetId }),
     })
     .eq('id', panelId)
-    .select()
+    .select(
+      `
+      *,
+      datasets:dataset_id (
+        id,
+        name,
+        canonical_schema
+      )
+    `
+    )
     .single()
 
   if (error) throw error
-  return transformPanel(data)
+  return transformPanelWithDataset(data)
 }
 
 export async function deletePanel(
@@ -635,6 +692,7 @@ function transformDashboard(row: any): Dashboard {
     datasetId: row.dataset_id,
     name: row.name,
     description: row.description,
+    defaultFilters: row.default_filters || [],
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -644,10 +702,22 @@ function transformPanel(row: any): DashboardPanel {
   return {
     id: row.id,
     dashboardId: row.dashboard_id,
+    datasetId: row.dataset_id,
     title: row.title,
     config: row.config,
     sortOrder: row.sort_order || 0,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+  }
+}
+
+function transformPanelWithDataset(row: any): DashboardPanelWithDataset {
+  return {
+    ...transformPanel(row),
+    dataset: {
+      id: row.datasets.id,
+      name: row.datasets.name,
+      canonicalSchema: row.datasets.canonical_schema,
+    },
   }
 }

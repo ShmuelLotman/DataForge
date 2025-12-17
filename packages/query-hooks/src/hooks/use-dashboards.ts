@@ -18,7 +18,7 @@ import type {
 // ============================================
 
 export interface CreateDashboardInput {
-  datasetId: string
+  datasetId?: string | null
   name: string
   description?: string
 }

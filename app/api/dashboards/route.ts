@@ -27,21 +27,23 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { datasetId, name, description } = body
 
-    if (!datasetId || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Missing required fields: datasetId, name' },
+        { error: 'Missing required field: name' },
         { status: 400 }
       )
     }
 
-    // Verify dataset ownership
-    const dataset = await getDataset(datasetId, session.user.id)
-    if (!dataset) {
-      return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
+    // If datasetId provided, verify dataset ownership
+    if (datasetId) {
+      const dataset = await getDataset(datasetId, session.user.id)
+      if (!dataset) {
+        return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
+      }
     }
 
     const dashboard = await createDashboard(
-      { datasetId, name, description },
+      { datasetId: datasetId || null, name, description },
       session.user.id
     )
 

@@ -71,10 +71,6 @@ export function CreateDashboardDialog({
       toast.error('Please enter a dashboard name')
       return
     }
-    if (!datasetId) {
-      toast.error('Please select a dataset')
-      return
-    }
 
     setIsSaving(true)
     try {
@@ -84,7 +80,7 @@ export function CreateDashboardDialog({
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || undefined,
-          datasetId,
+          datasetId: datasetId || null,
         }),
       })
 
@@ -197,7 +193,7 @@ export function CreateDashboardDialog({
           </Button>
           <Button
             onClick={handleCreate}
-            disabled={isSaving || !name.trim() || !datasetId}
+            disabled={isSaving || !name.trim()}
           >
             {isSaving ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
