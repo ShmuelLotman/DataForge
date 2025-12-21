@@ -37,6 +37,7 @@ import {
   ScatterChart as ScatterIcon,
   Database,
   Table2,
+  Hash,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -61,7 +62,18 @@ const chartTypes: {
   { value: 'area', label: 'Area', icon: AreaChart },
   { value: 'pie', label: 'Pie', icon: PieChart },
   { value: 'scatter', label: 'Scatter', icon: ScatterIcon },
+  { value: 'kpi', label: 'KPI', icon: Hash },
   { value: 'table', label: 'Table', icon: Table2 },
+]
+
+// Format options for KPI display
+const kpiFormatOptions: {
+  value: 'number' | 'currency' | 'percent'
+  label: string
+}[] = [
+  { value: 'number', label: 'Number' },
+  { value: 'currency', label: 'Currency ($)' },
+  { value: 'percent', label: 'Percent (%)' },
 ]
 
 // Derived column options that can be computed from date columns
@@ -147,6 +159,11 @@ export function EditPanelDialog({
   const [normalizeTo, setNormalizeTo] = useState<NormalizationMode>(
     panel.config.normalizeTo || 'none'
   )
+  // KPI options
+  const [kpiFormat, setKpiFormat] = useState<'number' | 'currency' | 'percent'>(
+    panel.config.format || 'number'
+  )
+  const [kpiLabel, setKpiLabel] = useState(panel.config.label || '')
 
   // Fetch all datasets for the dropdown
   const { data: datasets = [], isLoading: datasetsLoading } = useDatasetsQuery(
@@ -198,6 +215,8 @@ export function EditPanelDialog({
       setBlendedDatasetIds(ids.filter((id) => id !== panel.datasetId))
       setBlendMode(panel.config.blendMode || 'aggregate')
       setNormalizeTo(panel.config.normalizeTo || 'none')
+      setKpiFormat(panel.config.format || 'number')
+      setKpiLabel(panel.config.label || '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, panel.id])
@@ -292,13 +311,16 @@ export function EditPanelDialog({
   const showDonutOption = chartType === 'pie'
   const showDualYAxis =
     ['bar', 'line', 'area'].includes(chartType) && yAxis.length > 1
+  const isKpiType = chartType === 'kpi'
 
   const handleSave = () => {
     if (!title.trim()) {
       toast.error('Please enter a panel title')
       return
     }
-    if (!xAxis && chartType !== 'table') {
+    // KPI and table don't require x-axis
+    const requiresXAxis = !['table', 'kpi'].includes(chartType)
+    if (!xAxis && requiresXAxis) {
       toast.error('Please select an X-axis')
       return
     }
@@ -308,13 +330,13 @@ export function EditPanelDialog({
       return
     }
     if (yAxis.length === 0 && chartType !== 'table') {
-      toast.error('Please select at least one Y-axis metric')
+      toast.error('Please select at least one metric')
       return
     }
 
     const config: ChartConfig = {
       chartType,
-      xAxis,
+      xAxis: chartType === 'kpi' ? '_kpi' : xAxis,
       yAxis,
       groupBy: groupBy !== 'none' ? groupBy : null,
       // Derived X-axis (e.g., Day of Week from Date)
@@ -345,6 +367,12 @@ export function EditPanelDialog({
       }),
       // Normalization
       ...(normalizeTo !== 'none' && { normalizeTo }),
+      // KPI-specific options
+      ...(chartType === 'kpi' && {
+        format: kpiFormat,
+        label: kpiLabel || yAxis[0],
+        aggregation: 'sum' as const,
+      }),
     }
 
     const datasetIdChanged = selectedDatasetId !== panel.datasetId
@@ -562,64 +590,66 @@ export function EditPanelDialog({
             </div>
           </div>
 
-          {/* X-Axis */}
-          <div className="space-y-2">
-            <Label>X-Axis (Category)</Label>
-            <Select
-              value={xAxisDerived ? `derived:${xAxisDerived}` : xAxis}
-              onValueChange={(val) => {
-                if (val.startsWith('derived:')) {
-                  const derivedType = val.replace(
-                    'derived:',
-                    ''
-                  ) as DerivedColumnType
-                  setXAxisDerived(derivedType)
-                  setXAxis(derivedType)
-                  if (dateColumns.length === 1) {
-                    setXAxisSourceColumn(dateColumns[0].id)
+          {/* X-Axis (hidden for KPI) */}
+          {!isKpiType && (
+            <div className="space-y-2">
+              <Label>X-Axis (Category)</Label>
+              <Select
+                value={xAxisDerived ? `derived:${xAxisDerived}` : xAxis}
+                onValueChange={(val) => {
+                  if (val.startsWith('derived:')) {
+                    const derivedType = val.replace(
+                      'derived:',
+                      ''
+                    ) as DerivedColumnType
+                    setXAxisDerived(derivedType)
+                    setXAxis(derivedType)
+                    if (dateColumns.length === 1) {
+                      setXAxisSourceColumn(dateColumns[0].id)
+                    }
+                  } else {
+                    setXAxisDerived(null)
+                    setXAxisSourceColumn('')
+                    setXAxis(val)
                   }
-                } else {
-                  setXAxisDerived(null)
-                  setXAxisSourceColumn('')
-                  setXAxis(val)
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select column..." />
-              </SelectTrigger>
-              <SelectContent>
-                {/* Regular columns */}
-                {xOptions.map((col) => (
-                  <SelectItem key={col.id} value={col.id}>
-                    {col.label || col.id}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      ({col.type})
-                    </span>
-                  </SelectItem>
-                ))}
-                {/* Derived columns (only if date columns exist) */}
-                {dateColumns.length > 0 && (
-                  <>
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-2">
-                      Computed from Date
-                    </div>
-                    {DERIVED_X_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.id} value={`derived:${opt.id}`}>
-                        {opt.label}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({opt.description})
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select column..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Regular columns */}
+                  {xOptions.map((col) => (
+                    <SelectItem key={col.id} value={col.id}>
+                      {col.label || col.id}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        ({col.type})
+                      </span>
+                    </SelectItem>
+                  ))}
+                  {/* Derived columns (only if date columns exist) */}
+                  {dateColumns.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-2">
+                        Computed from Date
+                      </div>
+                      {DERIVED_X_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.id} value={`derived:${opt.id}`}>
+                          {opt.label}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({opt.description})
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Source Date Column (when derived X-axis is selected) */}
-          {xAxisDerived && dateColumns.length > 1 && (
+          {!isKpiType && xAxisDerived && dateColumns.length > 1 && (
             <div className="space-y-2">
               <Label>Source Date Column</Label>
               <Select
@@ -644,36 +674,98 @@ export function EditPanelDialog({
             </div>
           )}
 
-          {/* Y-Axis (Metrics) */}
+          {/* Y-Axis (Metrics) - for KPI, only allow single selection */}
           <div className="space-y-2">
-            <Label>Y-Axis (Metrics)</Label>
-            <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-secondary/10">
-              {yOptions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No numeric columns available
-                </p>
-              ) : (
-                yOptions.map((col) => (
-                  <div key={col.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`y-edit-${col.id}`}
-                      checked={yAxis.includes(col.id)}
-                      onCheckedChange={() => toggleYAxis(col.id)}
-                    />
-                    <label
-                      htmlFor={`y-edit-${col.id}`}
-                      className="text-sm cursor-pointer flex-1"
-                    >
+            <Label>
+              {isKpiType ? 'Metric to Display' : 'Y-Axis (Metrics)'}
+            </Label>
+            {isKpiType ? (
+              <Select
+                value={yAxis[0] || ''}
+                onValueChange={(val) => setYAxis([val])}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select metric..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {yOptions.map((col) => (
+                    <SelectItem key={col.id} value={col.id}>
                       {col.label || col.id}
-                    </label>
-                  </div>
-                ))
-              )}
-            </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-secondary/10">
+                {yOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No numeric columns available
+                  </p>
+                ) : (
+                  yOptions.map((col) => (
+                    <div key={col.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`y-edit-${col.id}`}
+                        checked={yAxis.includes(col.id)}
+                        onCheckedChange={() => toggleYAxis(col.id)}
+                      />
+                      <label
+                        htmlFor={`y-edit-${col.id}`}
+                        className="text-sm cursor-pointer flex-1"
+                      >
+                        {col.label || col.id}
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
+          {/* KPI Options */}
+          {isKpiType && (
+            <div className="space-y-4 p-4 border rounded-lg bg-secondary/10">
+              <div className="text-sm font-medium">KPI Display Options</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="kpi-format-edit">Format</Label>
+                  <Select
+                    value={kpiFormat}
+                    onValueChange={(val) =>
+                      setKpiFormat(val as typeof kpiFormat)
+                    }
+                  >
+                    <SelectTrigger id="kpi-format-edit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {kpiFormatOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kpi-label-edit">Label (Optional)</Label>
+                  <Input
+                    id="kpi-label-edit"
+                    value={kpiLabel}
+                    onChange={(e) => setKpiLabel(e.target.value)}
+                    placeholder={yAxis[0] || 'Total'}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                KPI displays a single aggregated value (sum) with optional
+                formatting
+              </p>
+            </div>
+          )}
+
           {/* Group By */}
-          {chartType !== 'table' && (
+          {chartType !== 'table' && !isKpiType && (
             <div className="space-y-2">
               <Label>Group By (Optional)</Label>
               <Select value={groupBy} onValueChange={setGroupBy}>
@@ -903,7 +995,7 @@ export function EditPanelDialog({
             disabled={
               updatePanelMutation.isPending ||
               !title.trim() ||
-              (chartType !== 'table' && !xAxis) ||
+              (!['table', 'kpi'].includes(chartType) && !xAxis) ||
               (chartType !== 'table' && yAxis.length === 0)
             }
           >

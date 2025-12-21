@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import type { ChartConfig } from '@/lib/types'
 import {
   LineChart,
@@ -16,7 +16,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   ScatterChart,
   Scatter,
@@ -24,6 +23,7 @@ import {
 } from 'recharts'
 import { formatDateLabel, isDateString } from '@/lib/date-utils'
 import { KPICard } from './kpi-card'
+import { ChartLegend } from './chart-legend'
 import {
   Table,
   TableBody,
@@ -39,15 +39,36 @@ interface ChartRendererProps {
   height?: string | number
   /** Show data labels on bars (values displayed on each segment) */
   showDataLabels?: boolean
+  /** Show the interactive side legend (default: true for charts with >3 series) */
+  showLegend?: boolean
 }
 
+// Extended color palette for many-series charts
 const CHART_COLORS = [
-  'oklch(0.75 0.18 165)', // primary teal
+  'oklch(0.75 0.18 165)', // teal
   'oklch(0.7 0.15 220)', // blue
   'oklch(0.75 0.2 50)', // amber
   'oklch(0.7 0.18 280)', // purple
   'oklch(0.65 0.15 340)', // pink
+  'oklch(0.72 0.16 140)', // green
+  'oklch(0.68 0.2 25)', // orange
+  'oklch(0.65 0.12 250)', // indigo
+  'oklch(0.78 0.14 95)', // lime
+  'oklch(0.62 0.18 0)', // red
+  'oklch(0.7 0.1 200)', // slate blue
+  'oklch(0.75 0.15 320)', // magenta
+  'oklch(0.68 0.12 180)', // cyan
+  'oklch(0.72 0.18 70)', // gold
+  'oklch(0.6 0.14 300)', // violet
+  'oklch(0.76 0.12 120)', // mint
+  'oklch(0.65 0.16 40)', // coral
+  'oklch(0.7 0.1 240)', // periwinkle
+  'oklch(0.73 0.14 85)', // chartreuse
+  'oklch(0.62 0.15 355)', // crimson
 ]
+
+/** Threshold for showing side legend vs inline */
+const LEGEND_THRESHOLD = 3
 
 // Format number for data labels - compact for large values
 function formatDataLabel(value: number): string {
@@ -65,7 +86,24 @@ export function ChartRenderer({
   config,
   height = '100%',
   showDataLabels = false,
+  showLegend,
 }: ChartRendererProps) {
+  // State for hidden series (toggled via legend)
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+
+  // Toggle a single series
+  const handleToggleSeries = useCallback((key: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
   // Process data for Recharts
   const { processedData, dataKeys } = useMemo(() => {
     if (!data || data.length === 0) {
@@ -178,6 +216,37 @@ export function ChartRenderer({
     return { processedData: processed, dataKeys: keys }
   }, [data, config])
 
+  // Create toggle-all handler with access to dataKeys
+  const handleToggleAllWithKeys = useCallback(
+    (visible: boolean) => {
+      if (visible) {
+        setHiddenKeys(new Set())
+      } else {
+        setHiddenKeys(new Set(dataKeys))
+      }
+    },
+    [dataKeys]
+  )
+
+  // Filter out hidden keys for rendering
+  const visibleDataKeys = useMemo(
+    () => dataKeys.filter((key) => !hiddenKeys.has(key)),
+    [dataKeys, hiddenKeys]
+  )
+
+  // Build legend items with colors
+  const legendItems = useMemo(
+    () =>
+      dataKeys.map((key, i) => ({
+        key,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+      })),
+    [dataKeys]
+  )
+
+  // Determine if we should show the side legend
+  const shouldShowLegend = showLegend ?? dataKeys.length > LEGEND_THRESHOLD
+
   if (processedData.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -199,13 +268,13 @@ export function ChartRenderer({
   }
 
   switch (chartType) {
-    case 'line':
+    case 'line': {
       const lineYAxisRight = config.yAxisRight || []
       const lineHasDualAxis = lineYAxisRight.length > 0
 
-      return (
+      const lineChart = (
         <ResponsiveContainer width="100%" height={height}>
-          <LineChart data={processedData}>
+          <LineChart data={processedData} margin={{ bottom: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
@@ -215,6 +284,10 @@ export function ChartRenderer({
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
               tickLine={false}
+              interval={0}
+              angle={processedData.length > 7 ? -45 : 0}
+              textAnchor={processedData.length > 7 ? 'end' : 'middle'}
+              height={processedData.length > 7 ? 60 : 30}
             />
             <YAxis
               yAxisId="left"
@@ -239,17 +312,20 @@ export function ChartRenderer({
                 fontSize: '12px',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => {
+            {visibleDataKeys.map((key) => {
+              const colorIndex = dataKeys.indexOf(key)
               const isRightAxis = lineYAxisRight.includes(key)
               return (
                 <Line
                   key={key}
                   type="monotone"
                   dataKey={key}
-                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                  stroke={CHART_COLORS[colorIndex % CHART_COLORS.length]}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: CHART_COLORS[i % CHART_COLORS.length] }}
+                  dot={{
+                    r: 3,
+                    fill: CHART_COLORS[colorIndex % CHART_COLORS.length],
+                  }}
                   activeDot={{ r: 5 }}
                   yAxisId={isRightAxis ? 'right' : 'left'}
                 />
@@ -259,18 +335,34 @@ export function ChartRenderer({
         </ResponsiveContainer>
       )
 
-    case 'bar':
+      if (!shouldShowLegend) return lineChart
+
+      return (
+        <div className="flex h-full">
+          <div className="flex-1 min-w-0">{lineChart}</div>
+          <ChartLegend
+            items={legendItems}
+            hiddenKeys={hiddenKeys}
+            onToggle={handleToggleSeries}
+            onToggleAll={handleToggleAllWithKeys}
+          />
+        </div>
+      )
+    }
+
+    case 'bar': {
       // Support horizontal layout and stacked bars
       const isHorizontal = config.layout === 'horizontal'
       const isStacked = config.stacked === true
       const barYAxisRight = config.yAxisRight || []
       const barHasDualAxis = barYAxisRight.length > 0 && !isHorizontal
 
-      return (
+      const barChart = (
         <ResponsiveContainer width="100%" height={height}>
           <BarChart
             data={processedData}
             layout={isHorizontal ? 'vertical' : 'horizontal'}
+            margin={{ bottom: isHorizontal ? 5 : 20 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -300,6 +392,10 @@ export function ChartRenderer({
                   stroke="oklch(0.65 0.01 260)"
                   fontSize={11}
                   tickLine={false}
+                  interval={0}
+                  angle={processedData.length > 7 ? -45 : 0}
+                  textAnchor={processedData.length > 7 ? 'end' : 'middle'}
+                  height={processedData.length > 7 ? 60 : 30}
                 />
                 <YAxis
                   yAxisId="left"
@@ -326,10 +422,10 @@ export function ChartRenderer({
                 fontSize: '12px',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => {
+            {visibleDataKeys.map((key) => {
+              const colorIndex = dataKeys.indexOf(key)
               const isRightAxis = barYAxisRight.includes(key)
-              const barColor = CHART_COLORS[i % CHART_COLORS.length]
+              const barColor = CHART_COLORS[colorIndex % CHART_COLORS.length]
               return (
                 <Bar
                   key={key}
@@ -360,13 +456,28 @@ export function ChartRenderer({
         </ResponsiveContainer>
       )
 
-    case 'area':
+      if (!shouldShowLegend) return barChart
+
+      return (
+        <div className="flex h-full">
+          <div className="flex-1 min-w-0">{barChart}</div>
+          <ChartLegend
+            items={legendItems}
+            hiddenKeys={hiddenKeys}
+            onToggle={handleToggleSeries}
+            onToggleAll={handleToggleAllWithKeys}
+          />
+        </div>
+      )
+    }
+
+    case 'area': {
       const areaYAxisRight = config.yAxisRight || []
       const areaHasDualAxis = areaYAxisRight.length > 0
 
-      return (
+      const areaChart = (
         <ResponsiveContainer width="100%" height={height}>
-          <AreaChart data={processedData}>
+          <AreaChart data={processedData} margin={{ bottom: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
@@ -376,6 +487,10 @@ export function ChartRenderer({
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
               tickLine={false}
+              interval={0}
+              angle={processedData.length > 7 ? -45 : 0}
+              textAnchor={processedData.length > 7 ? 'end' : 'middle'}
+              height={processedData.length > 7 ? 60 : 30}
             />
             <YAxis
               yAxisId="left"
@@ -400,16 +515,16 @@ export function ChartRenderer({
                 fontSize: '12px',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => {
+            {visibleDataKeys.map((key) => {
+              const colorIndex = dataKeys.indexOf(key)
               const isRightAxis = areaYAxisRight.includes(key)
               return (
                 <Area
                   key={key}
                   type="monotone"
                   dataKey={key}
-                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                  fill={CHART_COLORS[i % CHART_COLORS.length]}
+                  stroke={CHART_COLORS[colorIndex % CHART_COLORS.length]}
+                  fill={CHART_COLORS[colorIndex % CHART_COLORS.length]}
                   fillOpacity={0.3}
                   yAxisId={isRightAxis ? 'right' : 'left'}
                 />
@@ -419,16 +534,42 @@ export function ChartRenderer({
         </ResponsiveContainer>
       )
 
-    case 'pie':
+      if (!shouldShowLegend) return areaChart
+
+      return (
+        <div className="flex h-full">
+          <div className="flex-1 min-w-0">{areaChart}</div>
+          <ChartLegend
+            items={legendItems}
+            hiddenKeys={hiddenKeys}
+            onToggle={handleToggleSeries}
+            onToggleAll={handleToggleAllWithKeys}
+          />
+        </div>
+      )
+    }
+
+    case 'pie': {
       // Support donut style with innerRadius
       const innerRadius = config.innerRadius ?? 0
       const isDonut = innerRadius > 0
 
-      return (
+      // For pie charts, filter data by hidden keys (name-based)
+      const filteredPieData = processedData.filter(
+        (d) => !hiddenKeys.has(String(d.name))
+      )
+
+      // Build legend items from pie slices (name-based, not dataKey-based)
+      const pieLegendItems = processedData.map((d, i) => ({
+        key: String(d.name),
+        color: CHART_COLORS[i % CHART_COLORS.length],
+      }))
+
+      const pieChart = (
         <ResponsiveContainer width="100%" height={height}>
           <PieChart>
             <Pie
-              data={processedData}
+              data={filteredPieData}
               dataKey={dataKeys[0]}
               nameKey="name"
               cx="50%"
@@ -440,12 +581,18 @@ export function ChartRenderer({
               }
               labelLine={{ stroke: 'oklch(0.5 0.01 260)' }}
             >
-              {processedData.map((_, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={CHART_COLORS[index % CHART_COLORS.length]}
-                />
-              ))}
+              {filteredPieData.map((d) => {
+                // Find original index to keep color consistent
+                const originalIndex = processedData.findIndex(
+                  (orig) => orig.name === d.name
+                )
+                return (
+                  <Cell
+                    key={`cell-${d.name}`}
+                    fill={CHART_COLORS[originalIndex % CHART_COLORS.length]}
+                  />
+                )
+              })}
             </Pie>
             <Tooltip
               contentStyle={{
@@ -455,15 +602,36 @@ export function ChartRenderer({
                 fontSize: '12px',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
           </PieChart>
         </ResponsiveContainer>
       )
 
-    case 'scatter':
+      if (processedData.length <= LEGEND_THRESHOLD) return pieChart
+
+      return (
+        <div className="flex h-full">
+          <div className="flex-1 min-w-0">{pieChart}</div>
+          <ChartLegend
+            items={pieLegendItems}
+            hiddenKeys={hiddenKeys}
+            onToggle={handleToggleSeries}
+            onToggleAll={(visible) => {
+              if (visible) {
+                setHiddenKeys(new Set())
+              } else {
+                setHiddenKeys(new Set(processedData.map((d) => String(d.name))))
+              }
+            }}
+          />
+        </div>
+      )
+    }
+
+    case 'scatter': {
+      // Scatter charts typically have few series, use simpler legend handling
       return (
         <ResponsiveContainer width="100%" height={height}>
-          <ScatterChart>
+          <ScatterChart margin={{ bottom: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
@@ -493,7 +661,6 @@ export function ChartRenderer({
                 fontSize: '12px',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
             <Scatter
               name={config.yAxis[0]}
               data={processedData}
@@ -502,6 +669,7 @@ export function ChartRenderer({
           </ScatterChart>
         </ResponsiveContainer>
       )
+    }
 
     case 'table':
       // Render data as a simple table

@@ -37,6 +37,8 @@ interface QueryConfig {
     column: string
     direction: 'asc' | 'desc'
   }
+  // KPI mode: aggregate all data into a single row without grouping
+  aggregateOnly?: boolean
 }
 
 interface BlendedRequestBody {
@@ -221,24 +223,32 @@ export async function POST(request: Request) {
       return ds
     })
 
+    // Check if this is KPI/aggregateOnly mode
+    // Also detect legacy KPI panels that used '_kpi' as x-axis
+    const isAggregateOnly = body.config.aggregateOnly === true || 
+      body.config.x?.column === '_kpi' || 
+      body.config.x?.column === '_unused'
+
     // Validate that all required columns exist in all datasets
     // For derived columns, check the sourceColumn instead of the derived name
     const requiredColumns = new Set<string>()
     
-    // X-axis: use sourceColumn if derived, otherwise use column
-    if (body.config.x.derived && body.config.x.sourceColumn) {
-      requiredColumns.add(body.config.x.sourceColumn)
-    } else {
-      requiredColumns.add(body.config.x.column)
+    // X-axis: skip for aggregateOnly mode (KPI doesn't need x-axis)
+    if (!isAggregateOnly) {
+      if (body.config.x.derived && body.config.x.sourceColumn) {
+        requiredColumns.add(body.config.x.sourceColumn)
+      } else {
+        requiredColumns.add(body.config.x.column)
+      }
     }
     
-    // Y-axis columns
+    // Y-axis columns (always required)
     for (const y of body.config.y) {
       requiredColumns.add(y.column)
     }
     
-    // GroupBy columns: use sourceColumn if derived
-    if (body.config.groupBy) {
+    // GroupBy columns: skip for aggregateOnly mode
+    if (!isAggregateOnly && body.config.groupBy) {
       for (const g of body.config.groupBy) {
         if (g.derived && g.sourceColumn) {
           requiredColumns.add(g.sourceColumn)
@@ -267,9 +277,11 @@ export async function POST(request: Request) {
     const queryConfig = {
       x: body.config.x,
       y: body.config.y,
-      groupBy: body.config.groupBy || [],
+      groupBy: isAggregateOnly ? [] : (body.config.groupBy || []),
       filters: body.config.filters || [],
       // Don't pass limit/sortBy to individual queries - we apply after blending
+      // Pass aggregateOnly for KPI mode
+      ...(isAggregateOnly && { aggregateOnly: true }),
     }
 
     const queryResults = await Promise.all(
@@ -342,14 +354,32 @@ export async function POST(request: Request) {
     const xColumn = body.config.x.column
     const metricColumns = body.config.y.map((y) => y.column)
     // For groupBy, use the column name (which may be the derived name)
-    const groupByColumns = (body.config.groupBy || []).map((g) => g.column)
+    const groupByColumns = isAggregateOnly ? [] : (body.config.groupBy || []).map((g) => g.column)
     const blendMode = body.config.blendMode || 'aggregate'
     const normalizeTo = body.config.normalizeTo || 'none'
 
     // Blend rows based on mode
     let blendedRows: DataRow[]
 
-    if (blendMode === 'separate') {
+    if (isAggregateOnly) {
+      // KPI mode: sum all metrics from all datasets into a single row
+      const result: DataRow = {}
+      for (const col of metricColumns) {
+        result[col] = 0
+      }
+      
+      for (const { rows } of queryResults) {
+        for (const row of rows) {
+          for (const col of metricColumns) {
+            const current = Number(result[col] ?? 0)
+            const incoming = Number(row[col] ?? 0)
+            result[col] = current + (isNaN(incoming) ? 0 : incoming)
+          }
+        }
+      }
+      
+      blendedRows = [result]
+    } else if (blendMode === 'separate') {
       // Keep rows separate, add _source column
       blendedRows = separateRows(queryResults)
     } else {
@@ -358,14 +388,18 @@ export async function POST(request: Request) {
       blendedRows = aggregateRows(allRows, xColumn, metricColumns, groupByColumns)
     }
 
-    // Apply normalization
-    blendedRows = normalizeRows(blendedRows, metricColumns, normalizeTo)
+    // Apply normalization (skip for KPI - single value doesn't need normalization)
+    if (!isAggregateOnly) {
+      blendedRows = normalizeRows(blendedRows, metricColumns, normalizeTo)
+    }
 
-    // Apply sorting
-    blendedRows = sortRows(blendedRows, body.config.sortBy)
+    // Apply sorting (skip for KPI - single row)
+    if (!isAggregateOnly) {
+      blendedRows = sortRows(blendedRows, body.config.sortBy)
+    }
 
-    // Apply limit
-    if (body.config.limit && body.config.limit > 0) {
+    // Apply limit (skip for KPI - already single row)
+    if (!isAggregateOnly && body.config.limit && body.config.limit > 0) {
       blendedRows = blendedRows.slice(0, body.config.limit)
     }
 

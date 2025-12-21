@@ -26,7 +26,17 @@ export async function POST(
       )
     }
 
-    const data = await executeDatasetQuery(id, body)
+    // Auto-detect KPI mode from legacy x-axis values
+    const isKpiMode = body.aggregateOnly === true || 
+      body.x?.column === '_kpi' || 
+      body.x?.column === '_unused'
+    
+    // Ensure aggregateOnly is set for KPI queries
+    const queryBody = isKpiMode 
+      ? { ...body, aggregateOnly: true }
+      : body
+
+    const data = await executeDatasetQuery(id, queryBody)
 
     // Debug logging for groupBy issues
     if (body.groupBy && body.groupBy.length > 0) {

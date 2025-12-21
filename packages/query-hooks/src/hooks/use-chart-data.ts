@@ -51,6 +51,8 @@ export interface ChartQueryConfig {
     column: string // Which metric to sort by
     direction: 'asc' | 'desc' // desc for "top", asc for "bottom"
   }
+  // KPI mode: aggregate all data into a single row without grouping
+  aggregateOnly?: boolean
 }
 
 export interface ChartDataPoint {
@@ -68,9 +70,14 @@ export interface ChartDataPoint {
 export function chartConfigToQueryConfig(
   config: ChartConfig
 ): ChartQueryConfig {
+  // KPI charts use aggregateOnly mode - no grouping, just total aggregation
+  const isKpi = config.chartType === 'kpi'
+
   // Build x-axis config with optional derived column
-  const xConfig: ChartQueryConfig['x'] = { column: config.xAxis }
-  if (config.xAxisDerived && config.xAxisSourceColumn) {
+  // For KPI, x-axis is ignored by the backend when aggregateOnly is true
+  const xConfig: ChartQueryConfig['x'] = { column: config.xAxis || '_unused' }
+
+  if (!isKpi && config.xAxisDerived && config.xAxisSourceColumn) {
     xConfig.derived = config.xAxisDerived
     xConfig.sourceColumn = config.xAxisSourceColumn
   }
@@ -79,14 +86,16 @@ export function chartConfigToQueryConfig(
     x: xConfig,
     y: config.yAxis.map((col) => ({
       column: col,
-      aggregation: config.aggregation,
+      aggregation: config.aggregation ?? (isKpi ? 'sum' : undefined),
     })),
-    groupBy: config.groupBy ?? undefined,
-    bucket: config.bucket ?? undefined,
+    groupBy: isKpi ? undefined : config.groupBy ?? undefined,
+    bucket: isKpi ? undefined : config.bucket ?? undefined,
     filters: config.filters,
     dateRange: config.dateRange ?? undefined,
     limit: config.limit,
-    sortBy: config.sortBy,
+    sortBy: isKpi ? undefined : config.sortBy,
+    // KPI mode: aggregate all data into a single row
+    aggregateOnly: isKpi ? true : undefined,
   }
 }
 
