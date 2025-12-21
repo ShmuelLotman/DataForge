@@ -32,16 +32,21 @@ export async function POST(request: Request) {
     let finalSchema = dataset.canonicalSchema
     const startTime = Date.now()
 
-    // Process CSV Stream with smaller batch size (250) for wide datasets
-    // Wide datasets (many columns) cause JSON payload expansion (3-5x CSV size)
-    // Smaller batches prevent payload size issues and PostgREST timeouts
-    // For 70k rows, this results in ~280 operations, but avoids timeouts
+    // Use a moderate batch size for CSV parsing - the actual DB insert
+    // chunking is handled dynamically in addRows based on column count
+    const CSV_PARSE_BATCH_SIZE = 500
+
     const result = await processCSV(
       file.stream(),
       async (rows, schema) => {
         const batchStartTime = Date.now()
+        
         // Initialize on first batch
         if (!fileRecord) {
+          console.log(
+            `[Upload] Schema has ${schema.length} columns, starting upload...`
+          )
+
           // Validate Schema
           if (dataset.canonicalSchema) {
             const validation = validateSchemaCompatibility(
@@ -69,26 +74,26 @@ export async function POST(request: Request) {
             originalFilename: file.name,
             displayName: file.name.replace(/\.csv$/i, ''),
             columnSchema: schema,
-            schemaFingerprint: 'pending', // We'll update later or compute incrementally
+            schemaFingerprint: 'pending',
             rowCount: 0,
           })
         }
 
-        // Insert Rows with proper row_number offset
+        // Insert Rows - addRows handles chunking and retries internally
         await addRows(datasetId, fileRecord.id, rows, schema, rowOffset)
 
         totalRows += rows.length
         rowOffset += rows.length
 
         const batchTime = Date.now() - batchStartTime
-        if (totalRows % 10000 === 0 || batchTime > 5000) {
+        if (totalRows % 5000 === 0 || batchTime > 3000) {
           console.log(
             `[Upload] Processed ${totalRows} rows (batch of ${rows.length} took ${batchTime}ms)`
           )
         }
       },
-      250
-    ) // Reduced batch size to 250 to handle wide datasets (many columns cause JSON expansion)
+      CSV_PARSE_BATCH_SIZE
+    )
 
     const totalTime = Date.now() - startTime
     console.log(

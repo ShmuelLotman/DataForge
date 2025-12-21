@@ -52,11 +52,11 @@ export function DashboardCard({
       <div className="p-6 flex flex-col h-full relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
-            <Link href={`/dashboard/${dashboard.id}`}>
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary/50 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                    <LayoutDashboard className="h-6 w-6" />
-                </div>
-            </Link>
+          <Link href={`/dashboard/${dashboard.id}`}>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary/50 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
+              <LayoutDashboard className="h-6 w-6" />
+            </div>
+          </Link>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -91,45 +91,50 @@ export function DashboardCard({
 
         {/* Content */}
         <div className="flex-1 min-h-0 space-y-3">
-          <Link href={`/dashboard/${dashboard.id}`} className="block group-hover:text-primary transition-colors">
+          <Link
+            href={`/dashboard/${dashboard.id}`}
+            className="block group-hover:text-primary transition-colors"
+          >
             <h3 className="font-heading font-semibold text-xl leading-tight truncate">
               {dashboard.name}
             </h3>
           </Link>
-          
+
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-             <Database className="h-3.5 w-3.5" />
-             <span className="truncate max-w-[200px]">{dashboard.dataset.name}</span>
+            <Database className="h-3.5 w-3.5" />
+            <span className="truncate max-w-[200px]">
+              {dashboard.dataset?.name || 'No dataset selected'}
+            </span>
           </div>
 
           <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-            {dashboard.description || "No description provided."}
+            {dashboard.description || 'No description provided.'}
           </p>
         </div>
 
         {/* Footer Info */}
         <div className="mt-6 pt-5 border-t border-border/40 flex items-center justify-between">
           <div className="flex items-center gap-5 text-sm font-medium text-muted-foreground">
-             <div className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary/50" />
-                <span>{dashboard.panelCount} panels</span>
-             </div>
-             <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                <span>
-                    {formatDistanceToNow(new Date(dashboard.updatedAt), {
-                        addSuffix: true,
-                    })}
-                </span>
-             </div>
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-primary/50" />
+              <span>{dashboard.panelCount} panels</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              <span>
+                {formatDistanceToNow(new Date(dashboard.updatedAt), {
+                  addSuffix: true,
+                })}
+              </span>
+            </div>
           </div>
-          
-           <Link href={`/dashboard/${dashboard.id}`}>
-                <div className="flex items-center gap-2 text-sm font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
-                    Open
-                    <ArrowRight className="h-4 w-4" />
-                </div>
-             </Link>
+
+          <Link href={`/dashboard/${dashboard.id}`}>
+            <div className="flex items-center gap-2 text-sm font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
+              Open
+              <ArrowRight className="h-4 w-4" />
+            </div>
+          </Link>
         </div>
       </div>
     </Card>

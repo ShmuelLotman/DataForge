@@ -161,10 +161,89 @@ function estimatePayloadSize(rows: any[]): number {
 }
 
 /**
- * Maximum safe payload size (5MB) - PostgREST can handle larger, but we want to be safe
- * and avoid timeouts. Wide datasets (many columns) cause significant JSON expansion.
+ * Maximum safe payload size (2MB) - Reduced to avoid timeouts on Supabase.
+ * Wide datasets (many columns) cause significant JSON expansion.
  */
-const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_PAYLOAD_SIZE = 2 * 1024 * 1024 // 2MB (reduced from 5MB)
+
+/**
+ * Maximum rows per insert to avoid statement timeouts.
+ * Supabase has default statement timeouts (often 60s).
+ * Smaller inserts = faster completion = less chance of timeout.
+ */
+const MAX_ROWS_PER_INSERT = 100
+
+/**
+ * Retry configuration for transient errors
+ */
+const MAX_RETRIES = 3
+const RETRY_DELAY_MS = 1000
+
+/**
+ * Sleep helper for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Check if error is retryable (timeout or connection issue)
+ */
+function isRetryableError(error: any): boolean {
+  if (!error) return false
+  // PostgreSQL error codes that are retryable
+  const retryableCodes = [
+    '57014', // query_canceled (statement timeout)
+    '57P01', // admin_shutdown
+    '57P02', // crash_shutdown
+    '57P03', // cannot_connect_now
+    '08000', // connection_exception
+    '08003', // connection_does_not_exist
+    '08006', // connection_failure
+  ]
+  return retryableCodes.includes(error.code)
+}
+
+/**
+ * Insert a chunk with retry logic for transient failures
+ */
+async function insertChunkWithRetry(
+  chunk: any[],
+  chunkIndex: number,
+  totalChunks: number
+): Promise<void> {
+  let lastError: any = null
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const { error } = await supabase.from('data_rows').insert(chunk)
+
+    if (!error) {
+      return // Success
+    }
+
+    lastError = error
+
+    if (isRetryableError(error) && attempt < MAX_RETRIES) {
+      const delay = RETRY_DELAY_MS * attempt // Exponential-ish backoff
+      console.warn(
+        `[addRows] Retryable error on chunk ${chunkIndex + 1}/${totalChunks} ` +
+          `(attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms:`,
+        error.code,
+        error.message
+      )
+      await sleep(delay)
+    } else {
+      break // Non-retryable or max retries reached
+    }
+  }
+
+  // If we get here, all retries failed
+  console.error(
+    `[addRows] Failed to insert chunk ${chunkIndex + 1}/${totalChunks} after ${MAX_RETRIES} attempts:`,
+    lastError
+  )
+  throw lastError
+}
 
 export async function addRows(
   datasetId: string,
@@ -174,6 +253,7 @@ export async function addRows(
   rowOffset: number = 0
 ): Promise<void> {
   const dateCol = schema.find((c) => c.type === 'date')?.id
+  const columnCount = Object.keys(rows[0] || {}).length
 
   // Prepare all rows
   const dbRows = rows.map((row, i) => ({
@@ -185,71 +265,38 @@ export async function addRows(
     data: row,
   }))
 
-  // Check payload size and chunk if necessary
+  // Determine optimal chunk size based on column count and payload size
+  // Wide datasets need smaller chunks to avoid timeouts
+  const baseChunkSize = columnCount > 50 ? 25 : columnCount > 30 ? 50 : MAX_ROWS_PER_INSERT
   const payloadSize = estimatePayloadSize(dbRows)
+  const avgRowSize = dbRows.length > 0 ? payloadSize / dbRows.length : 0
 
-  // Debug logging to understand payload expansion
-  if (payloadSize > 1024 * 1024) {
-    // Log if > 1MB
-    const avgRowSize = payloadSize / dbRows.length
-    const sampleRowSize = estimatePayloadSize([dbRows[0]])
-    const columnCount = Object.keys(rows[0] || {}).length
+  // Calculate chunk size that stays under payload limit
+  let chunkSize = baseChunkSize
+  if (avgRowSize > 0) {
+    const payloadBasedChunkSize = Math.floor(MAX_PAYLOAD_SIZE / avgRowSize)
+    chunkSize = Math.max(1, Math.min(chunkSize, payloadBasedChunkSize))
+  }
+
+  // Debug logging
+  if (payloadSize > 512 * 1024 || columnCount > 20) {
     console.log(
-      `[addRows] Payload analysis: ${dbRows.length} rows, ${columnCount} columns, ` +
-        `${(payloadSize / 1024 / 1024).toFixed(2)}MB total, ` +
-        `${(avgRowSize / 1024).toFixed(2)}KB avg/row, ` +
-        `${(sampleRowSize / 1024).toFixed(2)}KB sample row`
+      `[addRows] ${dbRows.length} rows, ${columnCount} cols, ` +
+        `~${(payloadSize / 1024).toFixed(0)}KB total, ` +
+        `~${(avgRowSize / 1024).toFixed(1)}KB/row, ` +
+        `chunk size: ${chunkSize}`
     )
   }
 
-  if (payloadSize > MAX_PAYLOAD_SIZE && dbRows.length > 1) {
-    // Calculate safe chunk size (use 80% of max to be conservative)
-    const estimatedChunkSize = Math.max(
-      1,
-      Math.floor((dbRows.length * (MAX_PAYLOAD_SIZE * 0.8)) / payloadSize)
-    )
-    console.log(
-      `[addRows] Payload too large (${(payloadSize / 1024 / 1024).toFixed(
-        2
-      )}MB), splitting ${dbRows.length} rows into chunks`
-    )
+  // Split into chunks and insert with retry logic
+  const chunks: any[][] = []
+  for (let i = 0; i < dbRows.length; i += chunkSize) {
+    chunks.push(dbRows.slice(i, i + chunkSize))
+  }
 
-    // Insert in chunks, dynamically adjusting chunk size based on actual payload
-    let i = 0
-    while (i < dbRows.length) {
-      // Start with estimated chunk size
-      let chunkEnd = Math.min(i + estimatedChunkSize, dbRows.length)
-      let chunk = dbRows.slice(i, chunkEnd)
-      let chunkPayloadSize = estimatePayloadSize(chunk)
-
-      // Reduce chunk size if it's still too large
-      while (chunkPayloadSize > MAX_PAYLOAD_SIZE && chunk.length > 1) {
-        chunkEnd = i + Math.floor(chunk.length / 2)
-        chunk = dbRows.slice(i, chunkEnd)
-        chunkPayloadSize = estimatePayloadSize(chunk)
-      }
-
-      const { error } = await supabase.from('data_rows').insert(chunk)
-      if (error) {
-        console.error(
-          `[addRows] Error inserting chunk starting at row ${i} (${
-            chunk.length
-          } rows, ~${(chunkPayloadSize / 1024 / 1024).toFixed(2)}MB):`,
-          error
-        )
-        throw error
-      }
-
-      // Move to next chunk
-      i = chunkEnd
-    }
-  } else {
-    // Insert all at once if payload is safe
-    const { error } = await supabase.from('data_rows').insert(dbRows)
-    if (error) {
-      console.error(`[addRows] Error inserting ${dbRows.length} rows:`, error)
-      throw error
-    }
+  // Insert chunks sequentially (parallel would cause more timeouts)
+  for (let i = 0; i < chunks.length; i++) {
+    await insertChunkWithRetry(chunks[i], i, chunks.length)
   }
 }
 
@@ -443,6 +490,10 @@ export async function getDashboard(
       *,
       dashboard_panels (
         *,
+        panel_datasets (
+          dataset_id,
+          is_primary
+        ),
         datasets:dataset_id (
           id,
           name,
@@ -560,9 +611,23 @@ export async function addPanel(
   const dashboard = await getDashboard(dashboardId, userId)
   if (!dashboard) throw new Error('Dashboard not found')
 
-  // Verify dataset ownership
-  const dataset = await getDataset(panel.datasetId, userId)
-  if (!dataset) throw new Error('Dataset not found')
+  // Build dataset list (primary + blended)
+  const datasetIds = Array.from(
+    new Set(
+      panel.config.datasetIds && panel.config.datasetIds.length > 0
+        ? panel.config.datasetIds
+        : [panel.datasetId]
+    )
+  )
+  const primaryDatasetId = datasetIds[0]
+
+  // Verify dataset ownership for all involved datasets
+  await Promise.all(
+    datasetIds.map(async (id) => {
+      const ds = await getDataset(id, userId)
+      if (!ds) throw new Error('Dataset not found')
+    })
+  )
 
   // Get next sort order
   const maxSort = Math.max(0, ...dashboard.panels.map((p) => p.sortOrder))
@@ -571,14 +636,18 @@ export async function addPanel(
     .from('dashboard_panels')
     .insert({
       dashboard_id: dashboardId,
-      dataset_id: panel.datasetId,
+      dataset_id: primaryDatasetId,
       title: panel.title,
-      config: panel.config,
+      config: { ...panel.config, datasetIds },
       sort_order: maxSort + 1,
     })
     .select(
       `
       *,
+      panel_datasets (
+        dataset_id,
+        is_primary
+      ),
       datasets:dataset_id (
         id,
         name,
@@ -589,7 +658,23 @@ export async function addPanel(
     .single()
 
   if (error) throw error
-  return transformPanelWithDataset(data)
+  const createdPanel = transformPanelWithDataset(data)
+
+  // Sync panel_datasets
+  const rows = datasetIds.map((id) => ({
+    panel_id: createdPanel.id,
+    dataset_id: id,
+    is_primary: id === primaryDatasetId,
+  }))
+  await supabase.from('panel_datasets').upsert(rows, {
+    onConflict: 'panel_id,dataset_id',
+    ignoreDuplicates: false,
+  })
+
+  return {
+    ...createdPanel,
+    datasetIds,
+  }
 }
 
 export async function updatePanel(
@@ -600,7 +685,7 @@ export async function updatePanel(
   // Verify ownership through dashboard
   const { data: panel } = await supabase
     .from('dashboard_panels')
-    .select('dashboard_id')
+    .select('dashboard_id, dataset_id, config')
     .eq('id', panelId)
     .single()
 
@@ -609,24 +694,49 @@ export async function updatePanel(
   const dashboard = await getDashboard(panel.dashboard_id, userId)
   if (!dashboard) throw new Error('Unauthorized')
 
-  // If changing dataset, verify ownership
-  if (updates.datasetId) {
-    const dataset = await getDataset(updates.datasetId, userId)
-    if (!dataset) throw new Error('Dataset not found')
-  }
+  // Determine dataset list to enforce ownership + primary
+  const baseConfig: ChartConfig =
+    (updates.config as ChartConfig | undefined) ||
+    ((panel as any).config as ChartConfig)
+
+  const configDatasetIds =
+    baseConfig?.datasetIds && baseConfig.datasetIds.length > 0
+      ? baseConfig.datasetIds
+      : undefined
+
+  const datasetIds = Array.from(
+    new Set(
+      configDatasetIds ??
+        [updates.datasetId ?? (panel as any).dataset_id].filter(Boolean)
+    )
+  )
+  const primaryDatasetId = datasetIds[0]
+
+  await Promise.all(
+    datasetIds.map(async (id) => {
+      const ds = await getDataset(id, userId)
+      if (!ds) throw new Error('Dataset not found')
+    })
+  )
+
+  const configToSave = { ...baseConfig, datasetIds }
 
   const { data, error } = await supabase
     .from('dashboard_panels')
     .update({
       ...(updates.title && { title: updates.title }),
-      ...(updates.config && { config: updates.config }),
+      ...(configToSave && { config: configToSave }),
       ...(updates.sortOrder !== undefined && { sort_order: updates.sortOrder }),
-      ...(updates.datasetId && { dataset_id: updates.datasetId }),
+      ...(primaryDatasetId && { dataset_id: primaryDatasetId }),
     })
     .eq('id', panelId)
     .select(
       `
       *,
+      panel_datasets (
+        dataset_id,
+        is_primary
+      ),
       datasets:dataset_id (
         id,
         name,
@@ -637,7 +747,24 @@ export async function updatePanel(
     .single()
 
   if (error) throw error
-  return transformPanelWithDataset(data)
+
+  // Reset panel_datasets to match current list
+  await supabase.from('panel_datasets').delete().eq('panel_id', panelId)
+  const rows = datasetIds.map((id) => ({
+    panel_id: panelId,
+    dataset_id: id,
+    is_primary: id === primaryDatasetId,
+  }))
+  await supabase.from('panel_datasets').upsert(rows, {
+    onConflict: 'panel_id,dataset_id',
+    ignoreDuplicates: false,
+  })
+
+  const updated = transformPanelWithDataset(data)
+  return {
+    ...updated,
+    datasetIds,
+  }
 }
 
 export async function deletePanel(
@@ -699,6 +826,12 @@ function transformDashboard(row: any): Dashboard {
 }
 
 function transformPanel(row: any): DashboardPanel {
+  const datasetIds: string[] | undefined = row.panel_datasets
+    ? row.panel_datasets
+        .sort((a: any, b: any) => Number(b.is_primary) - Number(a.is_primary))
+        .map((pd: any) => pd.dataset_id)
+    : undefined
+
   return {
     id: row.id,
     dashboardId: row.dashboard_id,
@@ -708,6 +841,7 @@ function transformPanel(row: any): DashboardPanel {
     sortOrder: row.sort_order || 0,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    ...(datasetIds && { datasetIds }),
   }
 }
 

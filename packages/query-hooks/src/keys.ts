@@ -53,6 +53,8 @@ export const queryKeys = {
     all: ['chartData'] as const,
     query: <T extends object>(datasetId: string, config: T) =>
       [...queryKeys.chartData.all, datasetId, config] as const,
+    blended: <T extends object>(datasetIds: string[], config: T) =>
+      [...queryKeys.chartData.all, 'blended', datasetIds, config] as const,
   },
 } as const
 

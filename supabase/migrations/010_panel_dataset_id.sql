@@ -37,3 +37,4 @@ ALTER COLUMN dataset_id DROP NOT NULL;
 COMMENT ON COLUMN dashboard_panels.dataset_id IS 'The dataset this panel queries data from. Each panel can use a different dataset.';
 COMMENT ON COLUMN dashboards.dataset_id IS 'Optional default dataset for new panels. Legacy field kept for backwards compatibility.';
 
+

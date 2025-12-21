@@ -20,14 +20,25 @@ import {
   ResponsiveContainer,
   ScatterChart,
   Scatter,
+  LabelList,
 } from 'recharts'
 import { formatDateLabel, isDateString } from '@/lib/date-utils'
 import { KPICard } from './kpi-card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface ChartRendererProps {
   data: Record<string, string | number>[]
   config: ChartConfig
   height?: string | number
+  /** Show data labels on bars (values displayed on each segment) */
+  showDataLabels?: boolean
 }
 
 const CHART_COLORS = [
@@ -38,10 +49,22 @@ const CHART_COLORS = [
   'oklch(0.65 0.15 340)', // pink
 ]
 
+// Format number for data labels - compact for large values
+function formatDataLabel(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}K`
+  }
+  return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
 export function ChartRenderer({
   data,
   config,
   height = '100%',
+  showDataLabels = false,
 }: ChartRendererProps) {
   // Process data for Recharts
   const { processedData, dataKeys } = useMemo(() => {
@@ -51,8 +74,12 @@ export function ChartRenderer({
 
     const xAxis = config.xAxis
     const yAxis = config.yAxis
-    const groupBy = config.groupBy
     const bucket = config.bucket || 'day'
+
+    // For multi-dataset 'separate' mode, the backend adds _source column
+    // Combine _source with any explicit groupBy to create compound keys
+    const hasSourceColumn = data.some((row) => '_source' in row)
+    const isSeparateBlend = config.blendMode === 'separate'
 
     // Detect if x-axis values are dates by checking first row
     const firstXValue = data[0]?.[xAxis]
@@ -61,14 +88,41 @@ export function ChartRenderer({
     let processed: Record<string, string | number>[] = []
     let keys: string[] = []
 
-    if (groupBy) {
+    // Determine if we need to pivot/group the data
+    const hasGroupBy = !!config.groupBy
+    const needsPivot = hasGroupBy || (isSeparateBlend && hasSourceColumn)
+
+    // Debug logging for groupBy issues
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ChartRenderer] Pivot config:', {
+        hasGroupBy,
+        groupByValue: config.groupBy,
+        isSeparateBlend,
+        hasSourceColumn,
+        needsPivot,
+        sampleRow: data[0],
+        groupByInData: config.groupBy ? data[0]?.[config.groupBy] : 'N/A',
+      })
+    }
+
+    if (needsPivot) {
       // Pivot data for grouped charts
       const map = new Map<string, Record<string, string | number>>()
       data.forEach((row) => {
         const rawXVal = String(row[xAxis])
         // Format dates if detected
         const xVal = xAxisIsDate ? formatDateLabel(rawXVal, bucket) : rawXVal
-        const groupVal = String(row[groupBy] || 'Unknown')
+
+        // Build the group key - combine _source and explicit groupBy
+        const groupParts: string[] = []
+        if (isSeparateBlend && hasSourceColumn) {
+          groupParts.push(String(row['_source'] || 'Unknown'))
+        }
+        if (config.groupBy) {
+          groupParts.push(String(row[config.groupBy] || 'Unknown'))
+        }
+        // If no grouping dimensions, just use the metric name
+        const groupVal = groupParts.length > 0 ? groupParts.join(' - ') : null
 
         yAxis.forEach((yCol) => {
           const yVal = row[yCol]
@@ -77,8 +131,22 @@ export function ChartRenderer({
             map.set(xVal, { name: xVal })
           }
           const entry = map.get(xVal)!
-          const key = yAxis.length > 1 ? `${groupVal} - ${yCol}` : groupVal
-          entry[key] = yVal
+
+          // Build the series key
+          let key: string
+          if (groupVal) {
+            key = yAxis.length > 1 ? `${groupVal} - ${yCol}` : groupVal
+          } else {
+            key = yCol
+          }
+
+          // Sum values for same key (in case of multiple rows per x+group)
+          const existing = entry[key]
+          if (typeof existing === 'number') {
+            entry[key] = existing + Number(yVal ?? 0)
+          } else {
+            entry[key] = Number(yVal ?? 0)
+          }
         })
       })
       processed = Array.from(map.values())
@@ -132,6 +200,9 @@ export function ChartRenderer({
 
   switch (chartType) {
     case 'line':
+      const lineYAxisRight = config.yAxisRight || []
+      const lineHasDualAxis = lineYAxisRight.length > 0
+
       return (
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={processedData}>
@@ -146,10 +217,20 @@ export function ChartRenderer({
               tickLine={false}
             />
             <YAxis
+              yAxisId="left"
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
               tickLine={false}
             />
+            {lineHasDualAxis && (
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                stroke="oklch(0.7 0.15 220)"
+                fontSize={11}
+                tickLine={false}
+              />
+            )}
             <Tooltip
               contentStyle={{
                 backgroundColor: 'oklch(0.16 0.01 260)',
@@ -159,17 +240,21 @@ export function ChartRenderer({
               }}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                strokeWidth={2}
-                dot={{ r: 3, fill: CHART_COLORS[i % CHART_COLORS.length] }}
-                activeDot={{ r: 5 }}
-              />
-            ))}
+            {dataKeys.map((key, i) => {
+              const isRightAxis = lineYAxisRight.includes(key)
+              return (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: CHART_COLORS[i % CHART_COLORS.length] }}
+                  activeDot={{ r: 5 }}
+                  yAxisId={isRightAxis ? 'right' : 'left'}
+                />
+              )
+            })}
           </LineChart>
         </ResponsiveContainer>
       )
@@ -178,6 +263,8 @@ export function ChartRenderer({
       // Support horizontal layout and stacked bars
       const isHorizontal = config.layout === 'horizontal'
       const isStacked = config.stacked === true
+      const barYAxisRight = config.yAxisRight || []
+      const barHasDualAxis = barYAxisRight.length > 0 && !isHorizontal
 
       return (
         <ResponsiveContainer width="100%" height={height}>
@@ -215,10 +302,20 @@ export function ChartRenderer({
                   tickLine={false}
                 />
                 <YAxis
+                  yAxisId="left"
                   stroke="oklch(0.65 0.01 260)"
                   fontSize={11}
                   tickLine={false}
                 />
+                {barHasDualAxis && (
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    stroke="oklch(0.7 0.15 220)"
+                    fontSize={11}
+                    tickLine={false}
+                  />
+                )}
               </>
             )}
             <Tooltip
@@ -230,20 +327,43 @@ export function ChartRenderer({
               }}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => (
-              <Bar
-                key={key}
-                dataKey={key}
-                fill={CHART_COLORS[i % CHART_COLORS.length]}
-                radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-                stackId={isStacked ? 'stack' : undefined}
-              />
-            ))}
+            {dataKeys.map((key, i) => {
+              const isRightAxis = barYAxisRight.includes(key)
+              const barColor = CHART_COLORS[i % CHART_COLORS.length]
+              return (
+                <Bar
+                  key={key}
+                  dataKey={key}
+                  fill={barColor}
+                  radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                  stackId={isStacked ? 'stack' : undefined}
+                  yAxisId={
+                    isHorizontal ? undefined : isRightAxis ? 'right' : 'left'
+                  }
+                >
+                  {showDataLabels && (
+                    <LabelList
+                      dataKey={key}
+                      position={isHorizontal ? 'right' : 'top'}
+                      formatter={formatDataLabel}
+                      style={{
+                        fill: 'oklch(0.9 0.01 260)',
+                        fontSize: 10,
+                        fontWeight: 500,
+                      }}
+                    />
+                  )}
+                </Bar>
+              )
+            })}
           </BarChart>
         </ResponsiveContainer>
       )
 
     case 'area':
+      const areaYAxisRight = config.yAxisRight || []
+      const areaHasDualAxis = areaYAxisRight.length > 0
+
       return (
         <ResponsiveContainer width="100%" height={height}>
           <AreaChart data={processedData}>
@@ -258,10 +378,20 @@ export function ChartRenderer({
               tickLine={false}
             />
             <YAxis
+              yAxisId="left"
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
               tickLine={false}
             />
+            {areaHasDualAxis && (
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                stroke="oklch(0.7 0.15 220)"
+                fontSize={11}
+                tickLine={false}
+              />
+            )}
             <Tooltip
               contentStyle={{
                 backgroundColor: 'oklch(0.16 0.01 260)',
@@ -271,21 +401,29 @@ export function ChartRenderer({
               }}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
-            {dataKeys.map((key, i) => (
-              <Area
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                fill={CHART_COLORS[i % CHART_COLORS.length]}
-                fillOpacity={0.3}
-              />
-            ))}
+            {dataKeys.map((key, i) => {
+              const isRightAxis = areaYAxisRight.includes(key)
+              return (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                  fill={CHART_COLORS[i % CHART_COLORS.length]}
+                  fillOpacity={0.3}
+                  yAxisId={isRightAxis ? 'right' : 'left'}
+                />
+              )
+            })}
           </AreaChart>
         </ResponsiveContainer>
       )
 
     case 'pie':
+      // Support donut style with innerRadius
+      const innerRadius = config.innerRadius ?? 0
+      const isDonut = innerRadius > 0
+
       return (
         <ResponsiveContainer width="100%" height={height}>
           <PieChart>
@@ -295,6 +433,7 @@ export function ChartRenderer({
               nameKey="name"
               cx="50%"
               cy="50%"
+              innerRadius={isDonut ? '40%' : 0}
               outerRadius="70%"
               label={({ name, percent }) =>
                 `${name}: ${(percent * 100).toFixed(0)}%`
@@ -362,6 +501,44 @@ export function ChartRenderer({
             />
           </ScatterChart>
         </ResponsiveContainer>
+      )
+
+    case 'table':
+      // Render data as a simple table
+      const tableColumns =
+        config.yAxis.length > 0
+          ? [config.xAxis, ...config.yAxis]
+          : Object.keys(data[0] || {})
+
+      return (
+        <div className="h-full overflow-auto">
+          <Table>
+            <TableHeader className="sticky top-0 bg-card z-10">
+              <TableRow>
+                {tableColumns.map((col) => (
+                  <TableHead key={col} className="whitespace-nowrap text-xs">
+                    {col}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((row, rowIndex) => (
+                <TableRow key={rowIndex} className="hover:bg-muted/30">
+                  {tableColumns.map((col) => (
+                    <TableCell key={col} className="py-1.5 text-xs">
+                      {typeof row[col] === 'number'
+                        ? new Intl.NumberFormat('en-US', {
+                            maximumFractionDigits: 2,
+                          }).format(row[col] as number)
+                        : String(row[col] ?? '—')}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )
 
     default:

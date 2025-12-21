@@ -98,9 +98,14 @@ export {
 export {
   useChartDataQuery,
   useChartDataFromConfig,
+  useBlendedChartDataQuery,
+  usePanelChartData,
   chartConfigToQueryConfig,
+  chartConfigToBlendedConfig,
   type ChartQueryConfig,
+  type BlendedQueryConfig,
   type ChartDataPoint,
+  type DerivedColumnType,
 } from './hooks/use-chart-data'
 
 // ============================================

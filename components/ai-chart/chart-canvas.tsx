@@ -128,3 +128,4 @@ function EmptyState() {
     </motion.div>
   )
 }
+

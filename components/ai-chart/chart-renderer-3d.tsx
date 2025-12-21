@@ -318,3 +318,4 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
     </motion.div>
   )
 }
+

@@ -11,7 +11,7 @@ export async function POST(
     const session = await requireAuth()
     const { id: dashboardId } = await params
     const body = await request.json()
-    const { datasetId, title, config } = body
+    const { datasetId, datasetIds, title, config } = body
 
     if (!datasetId || !title || !config) {
       return NextResponse.json(
@@ -20,9 +20,16 @@ export async function POST(
       )
     }
 
+    if (datasetIds && !datasetIds.includes(datasetId)) {
+      return NextResponse.json(
+        { error: 'datasetIds must include the primary datasetId' },
+        { status: 400 }
+      )
+    }
+
     const panel = await addPanel(
       dashboardId,
-      { datasetId, title, config },
+      { datasetId, title, config: { ...config, datasetIds: datasetIds || config.datasetIds } },
       session.user.id
     )
 
@@ -44,4 +51,3 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to add panel' }, { status: 500 })
   }
 }
-

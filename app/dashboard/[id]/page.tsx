@@ -170,6 +170,8 @@ export default function DashboardViewPage() {
       groupBy: expandedPanel.config.groupBy || undefined,
       bucket: expandedPanel.config.bucket || undefined,
       filters: mergedFilters,
+      limit: expandedPanel.config.limit,
+      sortBy: expandedPanel.config.sortBy,
     }
   }, [expandedPanel, mergeWithPanelFilters])
 

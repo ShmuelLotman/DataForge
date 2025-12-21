@@ -121,11 +121,13 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 When deploying to Vercel, make sure to set the following environment variables in your Vercel project settings:
 
 **Required:**
+
 - `DATABASE_URL` - Your Supabase database connection string
 - `BETTER_AUTH_SECRET` - A secure random secret (at least 32 characters)
 - `NEXT_PUBLIC_APP_URL` - Your Vercel deployment URL (e.g., `https://your-app.vercel.app`)
 
 **Optional:**
+
 - `BETTER_AUTH_URL` - Override the base URL for auth (if different from `NEXT_PUBLIC_APP_URL`)
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL (if using Supabase features)
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anon key (if using Supabase features)

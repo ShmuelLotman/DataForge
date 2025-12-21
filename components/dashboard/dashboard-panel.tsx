@@ -19,10 +19,7 @@ import {
   Database,
 } from 'lucide-react'
 import { ChartRenderer } from './chart-renderer'
-import {
-  useChartDataQuery,
-  type ChartQueryConfig,
-} from '@dataforge/query-hooks'
+import { usePanelChartData, chartConfigToQueryConfig } from '@dataforge/query-hooks'
 
 interface DashboardPanelComponentProps {
   panel: DashboardPanelWithDataset
@@ -80,25 +77,20 @@ export function DashboardPanelComponent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalFiltersKey, panelFiltersKey, columnIdsKey])
 
-  // Serialize yAxis for stable dependency comparison
+  // Serialize for stable dependency comparison
   const yAxisKey = JSON.stringify(panel.config.yAxis)
   const mergedFiltersKey = JSON.stringify(mergedFilters)
+  const datasetIdsKey = JSON.stringify(panel.config.datasetIds || [])
 
-  // Memoize query config to prevent unnecessary refetches
-  // TanStack Query uses deep comparison on query keys, so this ensures stable references
-  const queryConfig = useMemo((): ChartQueryConfig | null => {
+  // Build the effective config with merged filters
+  // This preserves all multi-dataset settings from the panel config
+  const effectiveConfig = useMemo(() => {
     if (!panel.config.xAxis || panel.config.yAxis.length === 0) {
       return null
     }
 
     return {
-      x: { column: panel.config.xAxis },
-      y: panel.config.yAxis.map((col) => ({
-        column: col,
-        aggregation: panel.config.aggregation || 'sum',
-      })),
-      groupBy: panel.config.groupBy || undefined,
-      bucket: panel.config.bucket || undefined,
+      ...panel.config,
       filters: mergedFilters,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,23 +101,40 @@ export function DashboardPanelComponent({
     panel.config.groupBy,
     panel.config.bucket,
     mergedFiltersKey,
+    panel.config.limit,
+    panel.config.sortBy,
+    panel.config.blendMode,
+    panel.config.normalizeTo,
+    datasetIdsKey,
   ])
 
+  // Determine if this is a multi-dataset panel
+  const isMultiDataset =
+    (panel.config.datasetIds?.length ?? 0) > 1 ||
+    (panel.datasetIds?.length ?? 0) > 1
+
+  // Use the smart hook that auto-switches between single and blended queries
   const {
     data: chartData = [],
     isLoading,
     error: queryError,
-  } = useChartDataQuery(dataset.id, queryConfig!, {
-    enabled: !!queryConfig,
-    // Keep data fresh for 5 minutes - panels don't need constant updates
+  } = usePanelChartData(dataset.id, effectiveConfig!, {
+    enabled: !!effectiveConfig,
     staleTime: 5 * 60 * 1000,
   })
 
   const error = queryError
     ? 'Failed to load data'
-    : !queryConfig
-    ? 'Invalid chart configuration'
-    : null
+    : !effectiveConfig
+      ? 'Invalid chart configuration'
+      : null
+
+  // Build dataset display name
+  const datasetDisplayName = useMemo(() => {
+    if (!isMultiDataset) return dataset.name
+    const count = panel.config.datasetIds?.length || panel.datasetIds?.length || 1
+    return `${dataset.name} + ${count - 1} more`
+  }, [dataset.name, isMultiDataset, panel.config.datasetIds, panel.datasetIds])
 
   return (
     <Card className="h-full flex flex-col group">
@@ -137,8 +146,13 @@ export function DashboardPanelComponent({
           <div className="flex items-center gap-1 mt-0.5">
             <Database className="h-3 w-3 text-muted-foreground" />
             <span className="text-xs text-muted-foreground truncate">
-              {dataset.name}
+              {datasetDisplayName}
             </span>
+            {isMultiDataset && (
+              <span className="text-[10px] bg-primary/20 text-primary px-1 py-0.5 rounded">
+                blended
+              </span>
+            )}
           </div>
         </div>
         <DropdownMenu>
@@ -181,7 +195,12 @@ export function DashboardPanelComponent({
             {error}
           </div>
         ) : (
-          <ChartRenderer data={chartData} config={panel.config} height="100%" />
+          <ChartRenderer
+            data={chartData}
+            config={panel.config}
+            height="100%"
+            showDataLabels={panel.config.showDataLabels}
+          />
         )}
       </CardContent>
     </Card>
