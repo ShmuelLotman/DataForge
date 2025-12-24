@@ -25,7 +25,6 @@ export async function POST(
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    console.error('Error reordering panels:', error)
     return NextResponse.json(
       { error: 'Failed to reorder panels' },
       { status: 500 }

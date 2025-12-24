@@ -47,7 +47,6 @@ export async function POST(
     if (error instanceof Error && error.message === 'Dataset not found') {
       return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
     }
-    console.error('Error adding panel:', error)
     return NextResponse.json({ error: 'Failed to add panel' }, { status: 500 })
   }
 }

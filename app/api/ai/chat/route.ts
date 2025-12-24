@@ -48,7 +48,6 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (sessionError) {
-        console.error('Error creating chat session:', sessionError)
         return NextResponse.json(
           { error: 'Failed to create chat session' },
           { status: 500 }
@@ -77,45 +76,6 @@ export async function POST(req: NextRequest) {
       messages: convertToModelMessages(messages),
       tools,
       stopWhen: stepCountIs(8), // Allow more steps for: getDatasetContext → getMetricStatistics/queryDatasetData → respond
-      onError: (error) => {
-        console.error('[AI Chat] StreamText error:', error)
-      },
-      onStepFinish: (event) => {
-        console.log(`[AI Chat] Step finished: ${event.finishReason}`)
-        if (event.toolCalls && event.toolCalls.length > 0) {
-          console.log(
-            `[AI Chat] Tool calls:`,
-            event.toolCalls.map((tc) => ({
-              name: tc.toolName,
-              args: 'args' in tc ? tc.args : undefined,
-            }))
-          )
-        }
-        if (event.toolResults && event.toolResults.length > 0) {
-          console.log(
-            `[AI Chat] Tool results:`,
-            event.toolResults.map((tr) => {
-              const result = 'result' in tr ? tr.result : undefined
-              return {
-                toolName: tr.toolName,
-                success:
-                  result &&
-                  typeof result === 'object' &&
-                  'success' in result
-                    ? (result as { success: boolean }).success
-                    : 'unknown',
-                rowCount:
-                  result &&
-                  typeof result === 'object' &&
-                  'rows' in result &&
-                  Array.isArray((result as { rows: unknown[] }).rows)
-                    ? (result as { rows: unknown[] }).rows.length
-                    : 'N/A',
-              }
-            })
-          )
-        }
-      },
       onFinish: async ({ text, toolCalls, toolResults }) => {
         if (chatSessionId) {
           // Store user message
@@ -172,7 +132,6 @@ export async function POST(req: NextRequest) {
       headers: { 'X-Chat-Session-Id': chatSessionId || '' },
     })
   } catch (error) {
-    console.error('AI chat error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

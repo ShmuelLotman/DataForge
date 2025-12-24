@@ -45,7 +45,6 @@ export function CreateDatasetDialog({
         onOpenChange(false)
         return
       }
-      console.error('Error creating dataset:', error)
       toast.error(error.response?.data?.error || 'Failed to create dataset')
     },
   })

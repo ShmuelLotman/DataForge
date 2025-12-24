@@ -23,7 +23,6 @@ export async function POST(req: NextRequest) {
       .limit(100)
 
     if (sampleError) {
-      console.error('Error fetching sample data:', sampleError)
       return NextResponse.json(
         { error: 'Failed to fetch sample data' },
         { status: 500 }
@@ -38,7 +37,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Embedding generation error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

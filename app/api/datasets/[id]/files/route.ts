@@ -12,7 +12,6 @@ export async function GET(
     const files = await getFiles(id, session.user.id)
     return NextResponse.json(files)
   } catch (error) {
-    console.error('Error fetching files:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

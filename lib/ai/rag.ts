@@ -33,7 +33,6 @@ export async function findRelevantContext(
   })
 
   if (error) {
-    console.error('[RAG] Retrieval error:', error)
     return []
   }
 
@@ -54,13 +53,6 @@ export async function findRelevantContext(
   // Sort by similarity (highest first)
   results.sort((a, b) => b.similarity - a.similarity)
 
-  console.log(
-    `[RAG] Found ${results.length} results for query: "${query.slice(
-      0,
-      50
-    )}..."`
-  )
-
   return results
 }
 
@@ -76,7 +68,6 @@ export async function getAllDatasetEmbeddings(
     .eq('dataset_id', datasetId)
 
   if (error) {
-    console.error('[RAG] Error fetching all embeddings:', error)
     return []
   }
 

@@ -12,7 +12,6 @@ export async function GET() {
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    console.error('Error fetching dashboards:', error)
     return NextResponse.json(
       { error: 'Failed to fetch dashboards' },
       { status: 500 }
@@ -52,7 +51,6 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    console.error('Error creating dashboard:', error)
     return NextResponse.json(
       { error: 'Failed to create dashboard' },
       { status: 500 }

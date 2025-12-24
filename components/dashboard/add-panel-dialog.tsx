@@ -212,15 +212,30 @@ export function AddPanelDialog({
     )
   }, [selectedDataset, blendedDatasetIds, datasets])
 
+  // Inject _source as a virtual dimension when blending multiple datasets
+  const schemaWithSource = useMemo(() => {
+    if (blendedDatasetIds.length === 0) return schema
+    // Inject _source as a virtual dimension column at the start
+    return [
+      {
+        id: '_source',
+        label: 'Source (Dataset)',
+        type: 'string' as const,
+        role: 'dimension' as const,
+      },
+      ...schema,
+    ]
+  }, [schema, blendedDatasetIds])
+
   // Filter columns based on chart type
   const { xOptions, yOptions, groupOptions, dateColumns } = useMemo(() => {
-    const dimensions = schema.filter((c) => c.role === 'dimension')
-    const metrics = schema.filter((c) => c.type === 'number')
-    const dateOrNumeric = schema.filter(
+    const dimensions = schemaWithSource.filter((c) => c.role === 'dimension')
+    const metrics = schemaWithSource.filter((c) => c.type === 'number')
+    const dateOrNumeric = schemaWithSource.filter(
       (c) => c.type === 'date' || c.type === 'number'
     )
-    const dates = schema.filter((c) => c.type === 'date')
-    const allColumns = schema
+    const dates = schemaWithSource.filter((c) => c.type === 'date')
+    const allColumns = schemaWithSource
 
     switch (chartType) {
       case 'line':
@@ -256,7 +271,7 @@ export function AddPanelDialog({
           dateColumns: dates,
         }
     }
-  }, [chartType, schema])
+  }, [chartType, schemaWithSource])
 
   // Show advanced options for certain chart types
   const showLimitSort = ['bar', 'line', 'area', 'table'].includes(chartType)
@@ -613,7 +628,7 @@ export function AddPanelDialog({
                   <SelectValue placeholder="Select column..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Regular columns */}
+                  {/* Regular columns (includes _source when blending) */}
                   {xOptions.map((col) => (
                     <SelectItem key={col.id} value={col.id}>
                       {col.label || col.id}

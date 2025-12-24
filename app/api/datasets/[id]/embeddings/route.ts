@@ -27,7 +27,6 @@ export async function POST(
     }
 
     // Generate embeddings
-    console.log(`[Embeddings API] Regenerating embeddings for dataset ${datasetId}`)
     await generateDatasetEmbeddings(datasetId, dataset)
 
     return NextResponse.json({
@@ -37,7 +36,6 @@ export async function POST(
       datasetName: dataset.name,
     })
   } catch (error) {
-    console.error('[Embeddings API] Error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

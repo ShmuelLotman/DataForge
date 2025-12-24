@@ -21,7 +21,6 @@ export async function GET(
 
     return NextResponse.json(dataset)
   } catch (error) {
-    console.error('Error fetching dataset:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -42,7 +41,6 @@ export async function DELETE(
     await deleteDataset(id, session.user.id)
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting dataset:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -65,7 +63,6 @@ export async function PATCH(
     const dataset = await updateDatasetDetails(id, body, session.user.id)
     return NextResponse.json(dataset)
   } catch (error) {
-    console.error('Error updating dataset:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

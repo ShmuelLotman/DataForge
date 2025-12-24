@@ -43,7 +43,6 @@ async function getDatasetSampleData(
     .limit(limit)
 
   if (error) {
-    console.error('Error fetching sample data:', error)
     return []
   }
 
@@ -60,7 +59,6 @@ async function getDatasetRowCount(datasetId: string): Promise<number> {
     .eq('dataset_id', datasetId)
 
   if (error) {
-    console.error('Error fetching row count:', error)
     return 0
   }
 
@@ -215,7 +213,6 @@ export async function generateDatasetEmbeddings(
 
   const schema = dataset.canonicalSchema || []
   if (schema.length === 0) {
-    console.warn(`[Embeddings] No schema for dataset ${datasetId}, skipping`)
     return
   }
 
@@ -380,11 +377,7 @@ export async function generateDatasetEmbeddings(
       .insert(formattedEmbeddings)
 
     if (error) {
-      console.error('[Embeddings] Error storing embeddings:', error)
-    } else {
-      console.log(
-        `[Embeddings] Stored ${embeddings.length} embeddings for dataset ${datasetId}`
-      )
+      // Silently handle embedding storage errors
     }
   }
 }

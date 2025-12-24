@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { executeDatasetQuery, getDataset, getDatasets } from '@/lib/db-actions'
 import { requireAuth } from '@/lib/auth-server'
-import type { BlendMode, NormalizationMode, ChartFilter } from '@dataforge/types'
+import type {
+  BlendMode,
+  NormalizationMode,
+  ChartFilter,
+} from '@dataforge/types'
 
 // ============================================
 // REQUEST TYPES
@@ -225,31 +229,34 @@ export async function POST(request: Request) {
 
     // Check if this is KPI/aggregateOnly mode
     // Also detect legacy KPI panels that used '_kpi' as x-axis
-    const isAggregateOnly = body.config.aggregateOnly === true || 
-      body.config.x?.column === '_kpi' || 
+    const isAggregateOnly =
+      body.config.aggregateOnly === true ||
+      body.config.x?.column === '_kpi' ||
       body.config.x?.column === '_unused'
 
     // Validate that all required columns exist in all datasets
     // For derived columns, check the sourceColumn instead of the derived name
     const requiredColumns = new Set<string>()
-    
+
     // X-axis: skip for aggregateOnly mode (KPI doesn't need x-axis)
-    if (!isAggregateOnly) {
+    // Also skip _source (it's a synthetic virtual column)
+    if (!isAggregateOnly && body.config.x.column !== '_source') {
       if (body.config.x.derived && body.config.x.sourceColumn) {
         requiredColumns.add(body.config.x.sourceColumn)
       } else {
         requiredColumns.add(body.config.x.column)
       }
     }
-    
+
     // Y-axis columns (always required)
     for (const y of body.config.y) {
       requiredColumns.add(y.column)
     }
-    
-    // GroupBy columns: skip for aggregateOnly mode
+
+    // GroupBy columns: skip for aggregateOnly mode, skip _source (synthetic)
     if (!isAggregateOnly && body.config.groupBy) {
       for (const g of body.config.groupBy) {
+        if (g.column === '_source') continue // Skip synthetic column
         if (g.derived && g.sourceColumn) {
           requiredColumns.add(g.sourceColumn)
         } else {
@@ -274,14 +281,19 @@ export async function POST(request: Request) {
     }
 
     // Execute query for each dataset
+    // Filter out _source from groupBy (it's added after query execution)
+    const groupByWithoutSource = (body.config.groupBy || []).filter(
+      (g) => g.column !== '_source'
+    )
+    const xIsSource = body.config.x.column === '_source'
     const queryConfig = {
-      x: body.config.x,
+      x: xIsSource ? { column: '_unused' } : body.config.x,
       y: body.config.y,
-      groupBy: isAggregateOnly ? [] : (body.config.groupBy || []),
+      groupBy: isAggregateOnly ? [] : groupByWithoutSource,
       filters: body.config.filters || [],
       // Don't pass limit/sortBy to individual queries - we apply after blending
-      // Pass aggregateOnly for KPI mode
-      ...(isAggregateOnly && { aggregateOnly: true }),
+      // Pass aggregateOnly for KPI mode OR when x-axis is _source (aggregate entire dataset)
+      ...((isAggregateOnly || xIsSource) && { aggregateOnly: true }),
     }
 
     const queryResults = await Promise.all(
@@ -291,83 +303,38 @@ export async function POST(request: Request) {
       }))
     )
 
-    // Debug logging for groupBy issues
-    console.log('[Blended Query] Config:', {
-      xColumn: body.config.x.column,
-      yColumns: body.config.y.map((y) => y.column),
-      groupBy: body.config.groupBy,
-      blendMode: body.config.blendMode,
-    })
-    
-    // Log schema info for datasets with 0 rows to help debug
-    for (let i = 0; i < datasets.length; i++) {
-      const ds = datasets[i]
-      const result = queryResults[i]
-      if (result.rows.length === 0 && ds.rowCount > 0) {
-        const schema = ds.canonicalSchema || []
-        console.log(`[Blended Query] WARNING: Dataset "${ds.name}" returned 0 rows`, {
-          datasetId: ds.id,
-          schemaColumns: schema.map((c) => c.id),
-          requestedColumns: {
-            x: body.config.x.column,
-            y: body.config.y.map((y) => y.column),
-            groupBy: (body.config.groupBy || []).map((g) => g.column),
-          },
-          rowCountInDb: ds.rowCount,
-        })
-        
-        // Direct count check - is the data actually there?
-        const { supabase } = await import('@/lib/supabase')
-        const { count, error } = await supabase
-          .from('data_rows')
-          .select('*', { count: 'exact', head: true })
-          .eq('dataset_id', ds.id)
-        console.log(`[Blended Query] Direct count for "${ds.name}":`, { count, error })
-        
-        // Check a sample row to see actual data structure
-        const { data: sampleRow, error: sampleError } = await supabase
-          .from('data_rows')
-          .select('data')
-          .eq('dataset_id', ds.id)
-          .limit(1)
-          .single()
-        console.log(`[Blended Query] Sample row data for "${ds.name}":`, {
-          sampleData: sampleRow?.data,
-          sampleError,
-          hasXColumn: sampleRow?.data?.[body.config.x.column] !== undefined,
-          hasYColumn: sampleRow?.data?.[body.config.y[0]?.column] !== undefined,
-          xValue: sampleRow?.data?.[body.config.x.column],
-          yValue: sampleRow?.data?.[body.config.y[0]?.column],
-        })
-      }
-    }
-    
-    console.log('[Blended Query] Results sample:', {
-      datasetsQueried: queryResults.map((r) => r.datasetName),
-      rowCounts: queryResults.map((r) => r.rows.length),
-      sampleRows: queryResults.map((r) => r.rows[0]),
-    })
-
     // Extract config values
     // For derived columns, the SQL function returns the data keyed by the derived column name
     // (which is set as x.column when using derived columns)
     const xColumn = body.config.x.column
     const metricColumns = body.config.y.map((y) => y.column)
-    // For groupBy, use the column name (which may be the derived name)
-    const groupByColumns = isAggregateOnly ? [] : (body.config.groupBy || []).map((g) => g.column)
+    // Check if _source is used as x-axis or in groupBy
+    const groupByHasSource = (body.config.groupBy || []).some(
+      (g) => g.column === '_source'
+    )
+    const usesSource = xIsSource || groupByHasSource
+    // Get non-_source groupBy columns from config
+    const configGroupBy = isAggregateOnly
+      ? []
+      : (body.config.groupBy || [])
+          .map((g) => g.column)
+          .filter((c) => c !== '_source')
+    // Build effective groupBy: include _source if used (but not as x-axis to avoid duplication)
+    const groupByColumns =
+      usesSource && !xIsSource ? ['_source', ...configGroupBy] : configGroupBy
     const blendMode = body.config.blendMode || 'aggregate'
     const normalizeTo = body.config.normalizeTo || 'none'
 
     // Blend rows based on mode
     let blendedRows: DataRow[]
 
-    if (isAggregateOnly) {
+    if (isAggregateOnly && !xIsSource) {
       // KPI mode: sum all metrics from all datasets into a single row
       const result: DataRow = {}
       for (const col of metricColumns) {
         result[col] = 0
       }
-      
+
       for (const { rows } of queryResults) {
         for (const row of rows) {
           for (const col of metricColumns) {
@@ -377,18 +344,58 @@ export async function POST(request: Request) {
           }
         }
       }
-      
+
       blendedRows = [result]
-    } else if (blendMode === 'separate') {
-      // Keep rows separate, add _source column
-      blendedRows = separateRows(queryResults)
+    } else if (xIsSource) {
+      // X-axis is _source: create one row per dataset
+      // Each dataset query returned aggregated totals (aggregateOnly mode)
+      blendedRows = queryResults.map(({ datasetName, rows }) => {
+        const result: DataRow = { _source: datasetName }
+        // Initialize metrics to 0
+        for (const col of metricColumns) {
+          result[col] = 0
+        }
+        // Sum all rows from this dataset (should be 1 row from aggregateOnly query)
+        // If no rows returned, result will have all zeros (which is correct)
+        for (const row of rows) {
+          for (const col of metricColumns) {
+            const current = Number(result[col] ?? 0)
+            // Check if the metric exists in the row - it might be null or undefined
+            const rowValue = row[col]
+            const incoming =
+              rowValue !== null && rowValue !== undefined ? Number(rowValue) : 0
+            result[col] = current + (isNaN(incoming) ? 0 : incoming)
+          }
+        }
+
+        return result
+      })
     } else {
-      // Aggregate: merge all rows into one collection, then merge by key
-      const allRows = queryResults.flatMap((r) => r.rows)
-      blendedRows = aggregateRows(allRows, xColumn, metricColumns, groupByColumns)
+      // Step 1: Always tag all rows with _source (dataset name)
+      const allRowsWithSource = queryResults.flatMap(({ datasetName, rows }) =>
+        rows.map((row) => ({ ...row, _source: datasetName }))
+      )
+
+      // Step 2: Determine effective x-axis column
+      const effectiveXColumn = xColumn
+
+      // Step 3: Apply aggregation or keep separate based on blend mode
+      if (blendMode === 'separate' && !usesSource) {
+        // Separate mode without _source grouping: keep all rows as-is
+        blendedRows = allRowsWithSource
+      } else {
+        // Aggregate mode OR using _source: merge rows by key
+        blendedRows = aggregateRows(
+          allRowsWithSource,
+          effectiveXColumn,
+          metricColumns,
+          groupByColumns
+        )
+      }
     }
 
     // Apply normalization (skip for KPI - single value doesn't need normalization)
+    // For aggregateBySource, normalization makes sense (shows % of total per dataset)
     if (!isAggregateOnly) {
       blendedRows = normalizeRows(blendedRows, metricColumns, normalizeTo)
     }
@@ -403,16 +410,8 @@ export async function POST(request: Request) {
       blendedRows = blendedRows.slice(0, body.config.limit)
     }
 
-    // Debug: Final result
-    console.log('[Blended Query] Final result:', {
-      totalRows: blendedRows.length,
-      sampleRows: blendedRows.slice(0, 3),
-      uniqueSources: [...new Set(blendedRows.map((r) => r._source))],
-    })
-
     return NextResponse.json(blendedRows)
   } catch (error) {
-    console.error('Blended query error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

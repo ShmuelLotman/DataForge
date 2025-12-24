@@ -127,21 +127,11 @@ export function ChartRenderer({
     let keys: string[] = []
 
     // Determine if we need to pivot/group the data
+    // Don't pivot if _source is the x-axis (it's the dimension, not a grouping)
     const hasGroupBy = !!config.groupBy
-    const needsPivot = hasGroupBy || (isSeparateBlend && hasSourceColumn)
-
-    // Debug logging for groupBy issues
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ChartRenderer] Pivot config:', {
-        hasGroupBy,
-        groupByValue: config.groupBy,
-        isSeparateBlend,
-        hasSourceColumn,
-        needsPivot,
-        sampleRow: data[0],
-        groupByInData: config.groupBy ? data[0]?.[config.groupBy] : 'N/A',
-      })
-    }
+    const sourceIsXAxis = xAxis === '_source'
+    const needsPivot =
+      hasGroupBy || (isSeparateBlend && hasSourceColumn && !sourceIsXAxis)
 
     if (needsPivot) {
       // Pivot data for grouped charts

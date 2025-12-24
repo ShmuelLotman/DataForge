@@ -19,7 +19,6 @@ export async function GET(
       columns: dataset.canonicalSchema || [],
     })
   } catch (error) {
-    console.error('Schema fetch error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

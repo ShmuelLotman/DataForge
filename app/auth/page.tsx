@@ -63,7 +63,6 @@ function AuthPageContent() {
         router.push(redirectTo)
       }
     } catch (error) {
-      console.error('Error signing in:', error)
       toast.error('An error occurred during sign in')
     } finally {
       setIsLoading(false)

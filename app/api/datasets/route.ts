@@ -8,7 +8,6 @@ export async function GET() {
     const datasets = await getDatasets(session.user.id)
     return NextResponse.json(datasets)
   } catch (error) {
-    console.error('Error fetching datasets:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -40,7 +39,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(dataset)
   } catch (error) {
-    console.error('Error creating dataset:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

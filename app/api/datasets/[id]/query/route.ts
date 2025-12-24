@@ -38,21 +38,8 @@ export async function POST(
 
     const data = await executeDatasetQuery(id, queryBody)
 
-    // Debug logging for groupBy issues
-    if (body.groupBy && body.groupBy.length > 0) {
-      console.log('[Single Query] GroupBy config:', {
-        groupBy: body.groupBy,
-        rowCount: data.length,
-        sampleRow: data[0],
-        groupByColumnInSample: body.groupBy[0]?.column
-          ? data[0]?.[body.groupBy[0].column]
-          : 'N/A',
-      })
-    }
-
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Query error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

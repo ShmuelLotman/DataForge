@@ -47,7 +47,6 @@ export default function DashboardListPage() {
       const data = await res.json()
       setDashboards(data || [])
     } catch (error) {
-      console.error('Error fetching dashboards:', error)
       toast.error('Failed to load dashboards')
     } finally {
       setIsLoading(false)
@@ -62,7 +61,6 @@ export default function DashboardListPage() {
       setDeleteId(null)
       toast.success('Dashboard deleted successfully')
     } catch (error) {
-      console.error('Error deleting dashboard:', error)
       toast.error('Failed to delete dashboard')
     }
   }

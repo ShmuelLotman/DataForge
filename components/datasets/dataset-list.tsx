@@ -51,10 +51,6 @@ export function DatasetList() {
 
   const isLoading = authLoading || datasetsLoading
 
-  // Show error toast when datasets fail to load
-  if (datasetsError && !datasetsLoading) {
-    console.error('Error fetching datasets:', datasetsError)
-  }
 
   const handleDelete = (id: string) => {
     deleteDatasetMutation.mutate(id)

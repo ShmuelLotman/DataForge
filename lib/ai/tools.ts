@@ -112,7 +112,6 @@ export function createDatasetTools(datasetId: string) {
             ),
           }
         } catch (error) {
-          console.error('[getDatasetOverview] Error:', error)
           return {
             success: false,
             error:
@@ -243,11 +242,6 @@ export function createDatasetTools(datasetId: string) {
       ),
       execute: async (config) => {
         try {
-          console.log(
-            '[queryRawData] Starting query with config:',
-            JSON.stringify(config, null, 2)
-          )
-
           let query = supabase
             .from('data_rows')
             .select('data, parsed_date, id')
@@ -293,17 +287,12 @@ export function createDatasetTools(datasetId: string) {
           const { data, error } = await query
 
           if (error) {
-            console.error('[queryRawData] Supabase query error:', error)
             return {
               success: false,
               error: error.message,
               details: error,
             }
           }
-
-          console.log(
-            `[queryRawData] Fetched ${data?.length || 0} rows from database`
-          )
 
           // Transform results - extract data JSONB and include parsed_date
           let rows = (data || []).map((row: any) => {
@@ -414,12 +403,6 @@ export function createDatasetTools(datasetId: string) {
             typeof config.limit === 'number' ? config.limit : 100
           const finalRows = rows.slice(0, limitValue)
 
-          console.log(
-            `[queryRawData] Returning ${finalRows.length} rows (filtered from ${
-              rows.length
-            }, fetched ${data?.length || 0})`
-          )
-
           return {
             success: true,
             rows: finalRows,
@@ -429,7 +412,6 @@ export function createDatasetTools(datasetId: string) {
             note: 'Use _parsed_date for the parsed date value, _id for the row ID. All data columns are available in each row object.',
           }
         } catch (error) {
-          console.error('[queryRawData] Exception:', error)
           return {
             success: false,
             error:
@@ -567,7 +549,6 @@ export function createDatasetTools(datasetId: string) {
             note: 'These are overall statistics across all data',
           }
         } catch (error) {
-          console.error('getMetricStatistics error:', error)
           return {
             success: false,
             error:
@@ -678,7 +659,6 @@ export function createDatasetTools(datasetId: string) {
             },
           }
         } catch (error) {
-          console.error('queryDatasetData error:', error)
           return {
             success: false,
             error:

@@ -43,10 +43,6 @@ export async function POST(request: Request) {
         
         // Initialize on first batch
         if (!fileRecord) {
-          console.log(
-            `[Upload] Schema has ${schema.length} columns, starting upload...`
-          )
-
           // Validate Schema
           if (dataset.canonicalSchema) {
             const validation = validateSchemaCompatibility(
@@ -84,28 +80,16 @@ export async function POST(request: Request) {
 
         totalRows += rows.length
         rowOffset += rows.length
-
-        const batchTime = Date.now() - batchStartTime
-        if (totalRows % 5000 === 0 || batchTime > 3000) {
-          console.log(
-            `[Upload] Processed ${totalRows} rows (batch of ${rows.length} took ${batchTime}ms)`
-          )
-        }
       },
       CSV_PARSE_BATCH_SIZE
-    )
-
-    const totalTime = Date.now() - startTime
-    console.log(
-      `[Upload] Completed processing ${result.rowCount} rows in ${totalTime}ms`
     )
 
     // Generate AI embeddings for the dataset (async, don't block response)
     // This enables RAG-based context retrieval for the AI assistant
     const updatedDataset = await getDataset(datasetId, session.user.id)
     if (updatedDataset) {
-      generateDatasetEmbeddings(datasetId, updatedDataset).catch((err) => {
-        console.error('[Upload] Error generating embeddings:', err)
+      generateDatasetEmbeddings(datasetId, updatedDataset).catch(() => {
+        // Silently handle embedding generation errors
       })
     }
 
@@ -115,7 +99,6 @@ export async function POST(request: Request) {
       rowCount: result.rowCount,
     })
   } catch (error) {
-    console.error('Upload error:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

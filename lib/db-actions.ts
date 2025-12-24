@@ -225,12 +225,6 @@ async function insertChunkWithRetry(
 
     if (isRetryableError(error) && attempt < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * attempt // Exponential-ish backoff
-      console.warn(
-        `[addRows] Retryable error on chunk ${chunkIndex + 1}/${totalChunks} ` +
-          `(attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms:`,
-        error.code,
-        error.message
-      )
       await sleep(delay)
     } else {
       break // Non-retryable or max retries reached
@@ -238,10 +232,6 @@ async function insertChunkWithRetry(
   }
 
   // If we get here, all retries failed
-  console.error(
-    `[addRows] Failed to insert chunk ${chunkIndex + 1}/${totalChunks} after ${MAX_RETRIES} attempts:`,
-    lastError
-  )
   throw lastError
 }
 
@@ -276,16 +266,6 @@ export async function addRows(
   if (avgRowSize > 0) {
     const payloadBasedChunkSize = Math.floor(MAX_PAYLOAD_SIZE / avgRowSize)
     chunkSize = Math.max(1, Math.min(chunkSize, payloadBasedChunkSize))
-  }
-
-  // Debug logging
-  if (payloadSize > 512 * 1024 || columnCount > 20) {
-    console.log(
-      `[addRows] ${dbRows.length} rows, ${columnCount} cols, ` +
-        `~${(payloadSize / 1024).toFixed(0)}KB total, ` +
-        `~${(avgRowSize / 1024).toFixed(1)}KB/row, ` +
-        `chunk size: ${chunkSize}`
-    )
   }
 
   // Split into chunks and insert with retry logic

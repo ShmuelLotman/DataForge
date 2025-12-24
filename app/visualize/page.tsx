@@ -32,8 +32,7 @@ export default function VisualizePage() {
           setDatasets(data || [])
           setIsLoading(false)
         })
-        .catch((error) => {
-          console.error('Error fetching datasets:', error)
+        .catch(() => {
           toast.error('Failed to load datasets')
           setIsLoading(false)
         })

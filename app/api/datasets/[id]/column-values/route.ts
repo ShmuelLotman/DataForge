@@ -62,11 +62,6 @@ export async function GET(
 
       if (error) {
         // If RPC doesn't exist, fall back to manual query
-        console.warn(
-          `RPC get_column_distinct_values failed, using fallback:`,
-          error
-        )
-
         // Fallback: direct query (less efficient but works)
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('data_rows')
@@ -75,10 +70,6 @@ export async function GET(
           .limit(10000) // Sample for performance
 
         if (fallbackError) {
-          console.error(
-            `Error fetching column values for ${column}:`,
-            fallbackError
-          )
           result[column] = []
           continue
         }
@@ -101,7 +92,6 @@ export async function GET(
 
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Error fetching column values:', error)
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
