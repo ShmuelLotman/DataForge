@@ -6,6 +6,13 @@ import type {
   NormalizationMode,
   ChartFilter,
 } from '@dataforge/types'
+import {
+  aggregateRows as arqueroAggregateRows,
+  normalizeRows as arqueroNormalizeRows,
+  transformChartData,
+  intelligentSample,
+} from '@/lib/chart-transform'
+import { isDateString } from '@/lib/date-utils'
 
 // ============================================
 // REQUEST TYPES
@@ -43,6 +50,8 @@ interface QueryConfig {
   }
   // KPI mode: aggregate all data into a single row without grouping
   aggregateOnly?: boolean
+  // Transform data for chart rendering (pivot, date formatting)
+  transformForChart?: boolean
 }
 
 interface BlendedRequestBody {
@@ -57,22 +66,8 @@ interface BlendedRequestBody {
 type DataRow = Record<string, string | number | null>
 
 /**
- * Creates a unique key for grouping/merging rows
- */
-function makeRowKey(
-  row: DataRow,
-  xColumn: string,
-  groupByColumns: string[]
-): string {
-  const parts = [String(row[xColumn] ?? '')]
-  for (const col of groupByColumns) {
-    parts.push(String(row[col] ?? ''))
-  }
-  return parts.join('|')
-}
-
-/**
  * Aggregate mode: Merge rows by key, summing metric columns
+ * Uses Arquero for efficient columnar processing
  */
 function aggregateRows(
   allRows: DataRow[],
@@ -80,55 +75,17 @@ function aggregateRows(
   metricColumns: string[],
   groupByColumns: string[]
 ): DataRow[] {
-  const merged = new Map<string, DataRow>()
-
-  for (const row of allRows) {
-    const key = makeRowKey(row, xColumn, groupByColumns)
-    const existing = merged.get(key)
-
-    if (!existing) {
-      // Clone row with just the dimension columns
-      const newRow: DataRow = { [xColumn]: row[xColumn] }
-      for (const col of groupByColumns) {
-        newRow[col] = row[col]
-      }
-      for (const col of metricColumns) {
-        newRow[col] = Number(row[col] ?? 0)
-      }
-      merged.set(key, newRow)
-    } else {
-      // Sum metrics into existing row
-      for (const col of metricColumns) {
-        const current = Number(existing[col] ?? 0)
-        const incoming = Number(row[col] ?? 0)
-        existing[col] = current + (isNaN(incoming) ? 0 : incoming)
-      }
-    }
-  }
-
-  return Array.from(merged.values())
-}
-
-/**
- * Separate mode: Keep all rows, add _source column with dataset name
- */
-function separateRows(
-  rowsByDataset: { datasetName: string; rows: DataRow[] }[]
-): DataRow[] {
-  const result: DataRow[] = []
-  for (const { datasetName, rows } of rowsByDataset) {
-    for (const row of rows) {
-      result.push({
-        ...row,
-        _source: datasetName,
-      })
-    }
-  }
-  return result
+  return arqueroAggregateRows(
+    allRows as Record<string, unknown>[],
+    xColumn,
+    metricColumns,
+    groupByColumns
+  ) as DataRow[]
 }
 
 /**
  * Apply normalization to rows
+ * Uses Arquero for efficient columnar processing
  */
 function normalizeRows(
   rows: DataRow[],
@@ -137,43 +94,15 @@ function normalizeRows(
 ): DataRow[] {
   if (mode === 'none' || !mode) return rows
 
-  if (mode === 'row') {
-    // Each row's metrics sum to 100%
-    return rows.map((row) => {
-      const sum = metricColumns.reduce(
-        (acc, col) => acc + Number(row[col] ?? 0),
-        0
-      )
-      if (!sum) return row
-      const normalized: DataRow = { ...row }
-      for (const col of metricColumns) {
-        normalized[col] = (Number(row[col] ?? 0) / sum) * 100
-      }
-      return normalized
-    })
-  }
+  // Map 'all' mode to 'column' mode (both normalize across all rows)
+  const arqueroMode =
+    mode === 'all' ? 'column' : mode === 'row' ? 'row' : 'none'
 
-  if (mode === 'all') {
-    // All values across all rows sum to 100%
-    const grandTotal = rows.reduce((acc, row) => {
-      return (
-        acc +
-        metricColumns.reduce((inner, col) => inner + Number(row[col] ?? 0), 0)
-      )
-    }, 0)
-
-    if (!grandTotal) return rows
-
-    return rows.map((row) => {
-      const normalized: DataRow = { ...row }
-      for (const col of metricColumns) {
-        normalized[col] = (Number(row[col] ?? 0) / grandTotal) * 100
-      }
-      return normalized
-    })
-  }
-
-  return rows
+  return arqueroNormalizeRows(
+    rows as Record<string, unknown>[],
+    metricColumns,
+    arqueroMode
+  ) as DataRow[]
 }
 
 /**
@@ -296,12 +225,74 @@ export async function POST(request: Request) {
       ...((isAggregateOnly || xIsSource) && { aggregateOnly: true }),
     }
 
-    const queryResults = await Promise.all(
-      datasets.map(async (ds) => ({
-        datasetName: ds.name,
-        rows: (await executeDatasetQuery(ds.id, queryConfig)) as DataRow[],
-      }))
+    // Execute query for each dataset with error handling
+    // Use Promise.allSettled to ensure all queries are attempted even if some fail
+    const queryResults = await Promise.allSettled(
+      datasets.map(async (ds) => {
+        try {
+          const rows = (await executeDatasetQuery(
+            ds.id,
+            queryConfig
+          )) as DataRow[]
+          return {
+            datasetName: ds.name,
+            datasetId: ds.id,
+            rows,
+          }
+        } catch (error) {
+          // Log error but don't fail the entire request
+          console.error(`Error querying dataset ${ds.name} (${ds.id}):`, error)
+          return {
+            datasetName: ds.name,
+            datasetId: ds.id,
+            rows: [] as DataRow[],
+          }
+        }
+      })
     )
+
+    // Extract successful results and log any failures
+    const successfulResults: Array<{
+      datasetName: string
+      datasetId: string
+      rows: DataRow[]
+    }> = []
+
+    for (let i = 0; i < queryResults.length; i++) {
+      const result = queryResults[i]
+      if (result.status === 'fulfilled') {
+        successfulResults.push(result.value)
+        // Log dataset query results for debugging
+        // console.log(
+        //   `[Blended Query] Dataset ${result.value.datasetName} (${result.value.datasetId}): ${result.value.rows.length} rows`
+        // )
+        if (result.value.rows.length > 0) {
+          // console.log(
+          //   `[Blended Query] Sample row from ${result.value.datasetName}:`,
+          //   JSON.stringify(result.value.rows[0], null, 2)
+          // )
+        }
+      } else {
+        console.error(
+          `Failed to query dataset ${datasets[i].name} (${datasets[i].id}):`,
+          result.reason
+        )
+        // Include empty result so blending logic still works
+        successfulResults.push({
+          datasetName: datasets[i].name,
+          datasetId: datasets[i].id,
+          rows: [],
+        })
+      }
+    }
+
+    const totalRowsBeforeBlending = successfulResults.reduce(
+      (sum, r) => sum + r.rows.length,
+      0
+    )
+    // console.log(
+    //   `[Blended Query] Total rows before blending: ${totalRowsBeforeBlending}`
+    // )
 
     // Extract config values
     // For derived columns, the SQL function returns the data keyed by the derived column name
@@ -335,7 +326,7 @@ export async function POST(request: Request) {
         result[col] = 0
       }
 
-      for (const { rows } of queryResults) {
+      for (const { rows } of successfulResults) {
         for (const row of rows) {
           for (const col of metricColumns) {
             const current = Number(result[col] ?? 0)
@@ -349,7 +340,7 @@ export async function POST(request: Request) {
     } else if (xIsSource) {
       // X-axis is _source: create one row per dataset
       // Each dataset query returned aggregated totals (aggregateOnly mode)
-      blendedRows = queryResults.map(({ datasetName, rows }) => {
+      blendedRows = successfulResults.map(({ datasetName, rows }) => {
         const result: DataRow = { _source: datasetName }
         // Initialize metrics to 0
         for (const col of metricColumns) {
@@ -372,25 +363,52 @@ export async function POST(request: Request) {
       })
     } else {
       // Step 1: Always tag all rows with _source (dataset name)
-      const allRowsWithSource = queryResults.flatMap(({ datasetName, rows }) =>
-        rows.map((row) => ({ ...row, _source: datasetName }))
+      const allRowsWithSource = successfulResults.flatMap(
+        ({ datasetName, rows }) =>
+          rows.map((row) => ({ ...row, _source: datasetName }))
       )
+
+      // console.log(
+      //   `[Blended Query] Rows after tagging with _source: ${allRowsWithSource.length}`
+      // )
+      // Count rows by dataset for debugging
+      const rowsByDataset = new Map<string, number>()
+      for (const row of allRowsWithSource) {
+        const source = String(row._source || 'unknown')
+        rowsByDataset.set(source, (rowsByDataset.get(source) || 0) + 1)
+      }
+      // console.log(
+      //   `[Blended Query] Rows by dataset:`,
+      //   Object.fromEntries(rowsByDataset)
+      // )
 
       // Step 2: Determine effective x-axis column
       const effectiveXColumn = xColumn
 
-      // Step 3: Apply aggregation or keep separate based on blend mode
-      if (blendMode === 'separate' && !usesSource) {
-        // Separate mode without _source grouping: keep all rows as-is
-        blendedRows = allRowsWithSource
+      // Step 3: Apply aggregation based on blend mode
+      if (blendMode === 'separate') {
+        // Separate mode: aggregate by x-axis AND _source to keep datasets distinct
+        // This ensures each dataset has one row per x-value, ready for pivoting
+        blendedRows = aggregateRows(
+          allRowsWithSource,
+          effectiveXColumn,
+          metricColumns,
+          ['_source', ...configGroupBy] // Include _source in groupBy for separate mode
+        )
+        // console.log(
+        //   `[Blended Query] Using separate mode - aggregated to ${blendedRows.length} rows (by x + _source)`
+        // )
       } else {
-        // Aggregate mode OR using _source: merge rows by key
+        // Aggregate mode: merge rows by key (merging all datasets together)
         blendedRows = aggregateRows(
           allRowsWithSource,
           effectiveXColumn,
           metricColumns,
           groupByColumns
         )
+        // console.log(
+        //   `[Blended Query] Using aggregate mode - merged to ${blendedRows.length} rows`
+        // )
       }
     }
 
@@ -402,14 +420,163 @@ export async function POST(request: Request) {
 
     // Apply sorting (skip for KPI - single row)
     if (!isAggregateOnly) {
+      const beforeSort = blendedRows.length
       blendedRows = sortRows(blendedRows, body.config.sortBy)
+      // console.log(
+      //   `[Blended Query] After sorting: ${blendedRows.length} rows (was ${beforeSort})`
+      // )
+      // Count rows by dataset after sorting
+      const rowsByDatasetAfterSort = new Map<string, number>()
+      for (const row of blendedRows) {
+        const source = String(row._source || 'unknown')
+        rowsByDatasetAfterSort.set(
+          source,
+          (rowsByDatasetAfterSort.get(source) || 0) + 1
+        )
+      }
+      // console.log(
+      //   `[Blended Query] Rows by dataset after sort:`,
+      //   Object.fromEntries(rowsByDatasetAfterSort)
+      // )
     }
 
     // Apply limit (skip for KPI - already single row)
     if (!isAggregateOnly && body.config.limit && body.config.limit > 0) {
-      blendedRows = blendedRows.slice(0, body.config.limit)
+      // When there's a groupBy column, limit should apply to unique groupBy values
+      // (e.g., "top 20 descriptions"), not raw row count
+      // This ensures we get all x-axis values for the top N groupBy values
+      if (configGroupBy.length > 0) {
+        const groupByCol = configGroupBy[0]
+        const metricCol = metricColumns[0]
+
+        // Calculate total per groupBy value (sum across all x-values and sources)
+        const totalsByGroup = new Map<string, number>()
+        for (const row of blendedRows) {
+          const groupVal = String(row[groupByCol] ?? 'unknown')
+          const metricVal = Number(row[metricCol] ?? 0)
+          totalsByGroup.set(
+            groupVal,
+            (totalsByGroup.get(groupVal) || 0) + metricVal
+          )
+        }
+
+        // Sort groups by total and take top N
+        const sortDirection = body.config.sortBy?.direction ?? 'desc'
+        const sortedGroups = Array.from(totalsByGroup.entries()).sort((a, b) =>
+          sortDirection === 'desc' ? b[1] - a[1] : a[1] - b[1]
+        )
+        const topGroups = new Set(
+          sortedGroups.slice(0, body.config.limit).map(([group]) => group)
+        )
+
+        // Keep only rows for top N groups
+        blendedRows = blendedRows.filter((row) =>
+          topGroups.has(String(row[groupByCol] ?? 'unknown'))
+        )
+      } else if (blendMode === 'separate' && !usesSource) {
+        // Separate mode without groupBy: ensure balanced representation across datasets
+        // Group rows by dataset
+        const rowsByDataset = new Map<string, DataRow[]>()
+        for (const row of blendedRows) {
+          const source = String(row._source || 'unknown')
+          if (!rowsByDataset.has(source)) {
+            rowsByDataset.set(source, [])
+          }
+          rowsByDataset.get(source)!.push(row)
+        }
+
+        const numDatasets = rowsByDataset.size
+        const limitPerDataset = Math.ceil(body.config.limit / numDatasets)
+
+        // Sort each dataset's rows separately and take top N from each
+        const limitedRows: DataRow[] = []
+        for (const [, rows] of rowsByDataset) {
+          // Sort this dataset's rows by the same criteria to get its "best" rows
+          const sortedDatasetRows = sortRows(rows, body.config.sortBy)
+          limitedRows.push(...sortedDatasetRows.slice(0, limitPerDataset))
+        }
+
+        // Re-sort the combined limited rows to maintain global sort order
+        blendedRows = sortRows(limitedRows, body.config.sortBy)
+
+        // If we still have more than the limit, trim to exact limit
+        if (blendedRows.length > body.config.limit) {
+          blendedRows = blendedRows.slice(0, body.config.limit)
+        }
+      } else {
+        // Aggregate mode or using _source: apply global limit
+        blendedRows = blendedRows.slice(0, body.config.limit)
+      }
     }
 
+    // ============================================
+    // SERVER-SIDE CHART TRANSFORMATION
+    // ============================================
+    // If transformForChart is enabled, pivot and format data for Recharts
+    // This moves heavy processing from frontend to server
+    if (body.config.transformForChart && !isAggregateOnly) {
+      // Detect if x-axis is a date column by checking the first row's value
+      const firstXValue = blendedRows[0]?.[xColumn]
+      const xAxisIsDate = isDateString(firstXValue)
+
+      // Determine the effective groupBy column for pivoting
+      // Priority:
+      // 1. When x-axis IS _source (pie chart showing datasets), don't pivot - data is already grouped
+      // 2. If user explicitly specified a groupBy column, respect that for pivoting (creates series per groupBy value)
+      // 3. If blendMode is 'separate' with multiple datasets (no explicit groupBy), pivot by _source
+      // 4. If _source is in groupBy but not x-axis, pivot by _source
+      const pivotColumn = xIsSource
+        ? undefined // Don't pivot when x-axis is _source (pie charts)
+        : configGroupBy.length > 0
+        ? configGroupBy[0] // User's explicit groupBy takes priority - pivot by their chosen column
+        : blendMode === 'separate' && datasets.length > 1
+        ? '_source' // Only pivot by _source when no explicit groupBy in separate mode
+        : usesSource
+        ? '_source' // Pivot by _source when it's in groupBy but not x-axis
+        : undefined
+
+      // Transform data into Recharts-ready format
+      // Filter out 'none' bucket value since it's not a valid BucketType
+      const bucketValue =
+        body.config.x.bucket && body.config.x.bucket !== 'none'
+          ? (body.config.x.bucket as 'day' | 'week' | 'month')
+          : undefined
+
+      const chartData = transformChartData(
+        blendedRows as Record<string, unknown>[],
+        {
+          xAxis: xColumn,
+          yAxis: metricColumns,
+          groupBy: pivotColumn,
+          bucket: bucketValue,
+          blendMode: blendMode,
+          xAxisIsDate,
+        }
+      )
+
+      // Apply intelligent sampling if data is too large for smooth rendering
+      const MAX_CHART_POINTS = 1000
+      const sampledData =
+        chartData.length > MAX_CHART_POINTS
+          ? intelligentSample(chartData, MAX_CHART_POINTS, metricColumns[0])
+          : chartData
+
+      // Return transformed data with metadata
+      return NextResponse.json({
+        data: sampledData,
+        meta: {
+          transformed: true,
+          originalRowCount: blendedRows.length,
+          sampledRowCount: sampledData.length,
+          xAxisIsDate,
+          dataKeys: Object.keys(sampledData[0] || {}).filter(
+            (k) => k !== 'name'
+          ),
+        },
+      })
+    }
+
+    // Return raw blended rows (legacy behavior for non-chart consumers)
     return NextResponse.json(blendedRows)
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {

@@ -393,6 +393,7 @@ export default function DashboardViewPage() {
                   data={expandedData}
                   config={expandedPanel.config}
                   height="100%"
+                  schema={expandedPanel.dataset.canonicalSchema || undefined}
                 />
               )}
             </div>

@@ -53,11 +53,42 @@ export interface ChartQueryConfig {
   }
   // KPI mode: aggregate all data into a single row without grouping
   aggregateOnly?: boolean
+  // Request server-side chart transformation (pivot, date formatting)
+  transformForChart?: boolean
 }
 
 export interface ChartDataPoint {
-  x: string | number
-  [key: string]: string | number | null
+  /** X-axis value (raw format from single-dataset queries) */
+  x?: string | number
+  /** X-axis value (Recharts format from transformed queries) */
+  name?: string
+  [key: string]: string | number | null | undefined
+}
+
+/** Response from server-side transformed chart data */
+export interface TransformedChartResponse {
+  data: Array<{ name: string; [key: string]: string | number }>
+  meta: {
+    transformed: boolean
+    originalRowCount: number
+    sampledRowCount: number
+    xAxisIsDate: boolean
+    dataKeys: string[]
+  }
+}
+
+/** Check if response is transformed format */
+function isTransformedResponse(
+  response: unknown
+): response is TransformedChartResponse {
+  return (
+    typeof response === 'object' &&
+    response !== null &&
+    'data' in response &&
+    'meta' in response &&
+    typeof (response as TransformedChartResponse).meta?.transformed ===
+      'boolean'
+  )
 }
 
 // ============================================
@@ -66,10 +97,15 @@ export interface ChartDataPoint {
 
 /**
  * Convert ChartConfig to query API format
+ *
+ * @param config - Chart configuration
+ * @param options - Additional options for the query
  */
 export function chartConfigToQueryConfig(
-  config: ChartConfig
+  config: ChartConfig,
+  options?: { transformForChart?: boolean }
 ): ChartQueryConfig {
+  if (!config) return { x: { column: '_unused' }, y: [] }
   // KPI charts use aggregateOnly mode - no grouping, just total aggregation
   const isKpi = config.chartType === 'kpi'
 
@@ -84,7 +120,7 @@ export function chartConfigToQueryConfig(
 
   return {
     x: xConfig,
-    y: config.yAxis.map((col) => ({
+    y: config?.yAxis?.map((col) => ({
       column: col,
       aggregation: config.aggregation ?? (isKpi ? 'sum' : undefined),
     })),
@@ -96,6 +132,8 @@ export function chartConfigToQueryConfig(
     sortBy: isKpi ? undefined : config.sortBy,
     // KPI mode: aggregate all data into a single row
     aggregateOnly: isKpi ? true : undefined,
+    // Server-side chart transformation (default to true for non-KPI charts)
+    transformForChart: options?.transformForChart ?? !isKpi,
   }
 }
 
@@ -106,16 +144,20 @@ export function chartConfigToQueryConfig(
 /**
  * Execute a chart data query against a dataset
  *
+ * Server-side transformation is enabled by default for non-KPI charts.
+ * The server will pivot, aggregate, and format data for Recharts.
+ *
  * @example
  * ```tsx
- * // Basic usage
+ * // Basic usage - server transforms data automatically
  * const { data, isLoading, error } = useChartDataQuery(datasetId, {
  *   x: { column: 'date' },
  *   y: [{ column: 'revenue', aggregation: 'sum' }],
- *   bucket: 'month'
+ *   bucket: 'month',
+ *   transformForChart: true
  * })
  *
- * // Using ChartConfig
+ * // Using ChartConfig (transformation enabled by default)
  * const queryConfig = chartConfigToQueryConfig(panelConfig)
  * const { data } = useChartDataQuery(datasetId, queryConfig)
  * ```
@@ -131,9 +173,6 @@ export function useChartDataQuery(
   return useQuery({
     queryKey: queryKeys.chartData.query(datasetId, config),
     queryFn: async () => {
-      // Transform config to match SQL function's expected format
-      // SQL expects: groupBy: [{ column: "name", derived?: "...", sourceColumn?: "..." }]
-
       // Build x-axis config with derived column support
       const xConfig: Record<string, string | undefined> = {
         column: config.x.column,
@@ -172,19 +211,24 @@ export function useChartDataQuery(
         })),
         groupBy: groupByConfig,
         filters: config.filters || [],
-        // Top N / Sorting options
         ...(config.limit && { limit: config.limit }),
         ...(config.sortBy && { sortBy: config.sortBy }),
+        // Request server-side transformation (default: true)
+        transformForChart: config.transformForChart ?? true,
       }
 
-      const { data } = await axios.post<ChartDataPoint[]>(
-        `/api/datasets/${datasetId}/query`,
-        apiConfig
-      )
-      return data
+      const { data: response } = await axios.post<
+        ChartDataPoint[] | TransformedChartResponse
+      >(`/api/datasets/${datasetId}/query`, apiConfig)
+
+      // Handle both transformed and legacy response formats
+      if (isTransformedResponse(response)) {
+        return response.data as ChartDataPoint[]
+      }
+      return response
     },
     enabled: !!datasetId && !!config?.x?.column && config?.y?.length > 0,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     ...options,
   })
 }
@@ -226,18 +270,22 @@ export interface BlendedQueryConfig extends ChartQueryConfig {
   blendMode: BlendMode
   /** Normalize values to percentages */
   normalizeTo?: NormalizationMode
+  /** Request server-side chart transformation (pivot, date formatting) */
+  transformForChart?: boolean
 }
 
 /**
  * Build blended query config from ChartConfig with multi-dataset settings
  */
 export function chartConfigToBlendedConfig(
-  config: ChartConfig
+  config: ChartConfig,
+  options?: { transformForChart?: boolean }
 ): BlendedQueryConfig {
   return {
     ...chartConfigToQueryConfig(config),
-    blendMode: config.blendMode ?? 'aggregate',
-    normalizeTo: config.normalizeTo,
+    blendMode: config?.blendMode ?? 'aggregate',
+    normalizeTo: config?.normalizeTo,
+    transformForChart: options?.transformForChart ?? true, // Default to server-side transformation
   }
 }
 
@@ -325,14 +373,22 @@ export function useBlendedChartDataQuery(
           normalizeTo: config.normalizeTo,
           ...(config.limit && { limit: config.limit }),
           ...(config.sortBy && { sortBy: config.sortBy }),
+          // Request server-side chart transformation
+          transformForChart: config.transformForChart ?? true,
         },
       }
 
-      const { data } = await axios.post<ChartDataPoint[]>(
-        '/api/datasets/query-blended',
-        apiConfig
-      )
-      return data
+      const { data: response } = await axios.post<
+        ChartDataPoint[] | TransformedChartResponse
+      >('/api/datasets/query-blended', apiConfig)
+
+      // Handle both transformed and legacy response formats
+      if (isTransformedResponse(response)) {
+        // Server returned pre-processed chart data
+        return response.data as ChartDataPoint[]
+      }
+      // Legacy format: raw data rows
+      return response
     },
     enabled:
       datasetIds.length > 0 && !!config?.x?.column && config?.y?.length > 0,
@@ -362,13 +418,13 @@ export function usePanelChartData(
     'queryKey' | 'queryFn'
   >
 ) {
-  const datasetIds = config.datasetIds ?? [primaryDatasetId]
+  const datasetIds = config?.datasetIds ?? [primaryDatasetId]
   const isMultiDataset = datasetIds.length > 1
 
   // Single dataset query
   const singleQuery = useChartDataQuery(
     primaryDatasetId,
-    chartConfigToQueryConfig(config),
+    chartConfigToQueryConfig(config ?? ({} as any)),
     {
       ...options,
       enabled: !isMultiDataset && (options?.enabled ?? true),

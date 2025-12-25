@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useCallback } from 'react'
-import type { ChartConfig } from '@/lib/types'
+import type { ChartConfig, ColumnSchema } from '@/lib/types'
 import {
   LineChart,
   Line,
@@ -21,17 +21,10 @@ import {
   Scatter,
   LabelList,
 } from 'recharts'
-import { formatDateLabel, isDateString } from '@/lib/date-utils'
+import { isDateString } from '@/lib/date-utils'
 import { KPICard } from './kpi-card'
 import { ChartLegend } from './chart-legend'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { DataTable } from './data-table'
 
 interface ChartRendererProps {
   data: Record<string, string | number>[]
@@ -41,6 +34,8 @@ interface ChartRendererProps {
   showDataLabels?: boolean
   /** Show the interactive side legend (default: true for charts with >3 series) */
   showLegend?: boolean
+  /** Column schema for table view (optional, will be inferred from data if not provided) */
+  schema?: ColumnSchema[]
 }
 
 // Extended color palette for many-series charts
@@ -70,7 +65,19 @@ const CHART_COLORS = [
 /** Threshold for showing side legend vs inline */
 const LEGEND_THRESHOLD = 3
 
-// Format number for data labels - compact for large values
+// Performance optimization thresholds
+const MAX_TICKS = 20
+const ANIMATION_THRESHOLD = 300
+const DOT_THRESHOLD = 300
+
+/** Calculate optimal X-axis tick interval to prevent rendering too many ticks */
+function calculateOptimalInterval(dataLength: number): number {
+  console.log('dataLength', dataLength)
+  if (dataLength >= MAX_TICKS) return 0
+  return Math.ceil(dataLength / MAX_TICKS) - 1
+}
+
+/** Format number for data labels - compact for large values */
 function formatDataLabel(value: number): string {
   if (value >= 1_000_000) {
     return `${(value / 1_000_000).toFixed(1)}M`
@@ -87,6 +94,7 @@ export function ChartRenderer({
   height = '100%',
   showDataLabels = false,
   showLegend,
+  schema,
 }: ChartRendererProps) {
   // State for hidden series (toggled via legend)
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
@@ -104,107 +112,24 @@ export function ChartRenderer({
     })
   }, [])
 
-  // Process data for Recharts
-  const { processedData, dataKeys } = useMemo(() => {
-    if (!data || data.length === 0) {
-      return { processedData: [], dataKeys: [] }
+  // Extract data keys from pre-processed server data
+  // Server transforms data to have 'name' as x-axis and all metrics as separate keys
+  const dataKeys = useMemo(() => {
+    if (!data || data.length === 0) return []
+
+    // Collect all unique keys across all rows (except 'name')
+    const keySet = new Set<string>()
+    for (const row of data) {
+      for (const key of Object.keys(row)) {
+        if (key !== 'name') keySet.add(key)
+      }
     }
+    return Array.from(keySet)
+  }, [data])
 
-    const xAxis = config.xAxis
-    const yAxis = config.yAxis
-    const bucket = config.bucket || 'day'
-
-    // For multi-dataset 'separate' mode, the backend adds _source column
-    // Combine _source with any explicit groupBy to create compound keys
-    const hasSourceColumn = data.some((row) => '_source' in row)
-    const isSeparateBlend = config.blendMode === 'separate'
-
-    // Detect if x-axis values are dates by checking first row
-    const firstXValue = data[0]?.[xAxis]
-    const xAxisIsDate = isDateString(firstXValue)
-
-    let processed: Record<string, string | number>[] = []
-    let keys: string[] = []
-
-    // Determine if we need to pivot/group the data
-    // Don't pivot if _source is the x-axis (it's the dimension, not a grouping)
-    const hasGroupBy = !!config.groupBy
-    const sourceIsXAxis = xAxis === '_source'
-    const needsPivot =
-      hasGroupBy || (isSeparateBlend && hasSourceColumn && !sourceIsXAxis)
-
-    if (needsPivot) {
-      // Pivot data for grouped charts
-      const map = new Map<string, Record<string, string | number>>()
-      data.forEach((row) => {
-        const rawXVal = String(row[xAxis])
-        // Format dates if detected
-        const xVal = xAxisIsDate ? formatDateLabel(rawXVal, bucket) : rawXVal
-
-        // Build the group key - combine _source and explicit groupBy
-        const groupParts: string[] = []
-        if (isSeparateBlend && hasSourceColumn) {
-          groupParts.push(String(row['_source'] || 'Unknown'))
-        }
-        if (config.groupBy) {
-          groupParts.push(String(row[config.groupBy] || 'Unknown'))
-        }
-        // If no grouping dimensions, just use the metric name
-        const groupVal = groupParts.length > 0 ? groupParts.join(' - ') : null
-
-        yAxis.forEach((yCol) => {
-          const yVal = row[yCol]
-
-          if (!map.has(xVal)) {
-            map.set(xVal, { name: xVal })
-          }
-          const entry = map.get(xVal)!
-
-          // Build the series key
-          let key: string
-          if (groupVal) {
-            key = yAxis.length > 1 ? `${groupVal} - ${yCol}` : groupVal
-          } else {
-            key = yCol
-          }
-
-          // Sum values for same key (in case of multiple rows per x+group)
-          const existing = entry[key]
-          if (typeof existing === 'number') {
-            entry[key] = existing + Number(yVal ?? 0)
-          } else {
-            entry[key] = Number(yVal ?? 0)
-          }
-        })
-      })
-      processed = Array.from(map.values())
-
-      // Extract all keys except 'name'
-      const keySet = new Set<string>()
-      processed.forEach((row) => {
-        Object.keys(row).forEach((k) => {
-          if (k !== 'name') keySet.add(k)
-        })
-      })
-      keys = Array.from(keySet)
-    } else {
-      processed = data.map((row) => {
-        const rawXVal = String(row[xAxis])
-        // Format dates if detected
-        const formattedX = xAxisIsDate
-          ? formatDateLabel(rawXVal, bucket)
-          : rawXVal
-        const item: Record<string, string | number> = { name: formattedX }
-        yAxis.forEach((yCol) => {
-          item[yCol] = row[yCol]
-        })
-        return item
-      })
-      keys = yAxis
-    }
-
-    return { processedData: processed, dataKeys: keys }
-  }, [data, config])
+  // Data is already processed by the server - use directly
+  // Server returns data with 'name' field as x-axis and metrics as keys
+  const chartData = data as Record<string, string | number>[]
 
   // Create toggle-all handler with access to dataKeys
   const handleToggleAllWithKeys = useCallback(
@@ -237,15 +162,86 @@ export function ChartRenderer({
   // Determine if we should show the side legend
   const shouldShowLegend = showLegend ?? dataKeys.length > LEGEND_THRESHOLD
 
-  if (processedData.length === 0) {
+  // Build table schema for table view
+  // Infer from data or use provided schema
+  const tableSchema = useMemo(() => {
+    if (data.length === 0) return []
+
+    const allKeys = new Set(Object.keys(data[0] || {}))
+    const hasSourceColumn = allKeys.has('_source')
+
+    // Use provided schema if available, filter to existing columns
+    if (schema && schema.length > 0) {
+      const schemaFromData = schema.filter((col) => allKeys.has(col.id))
+
+      // Include _source if it exists in data but not in schema
+      if (
+        hasSourceColumn &&
+        !schemaFromData.some((col) => col.id === '_source')
+      ) {
+        schemaFromData.unshift({
+          id: '_source',
+          label: 'Source (Dataset)',
+          type: 'string',
+          role: 'dimension',
+        })
+      }
+      return schemaFromData
+    }
+
+    // Infer schema from data
+    const firstRow = data[0]
+    const inferredSchema: ColumnSchema[] = []
+
+    // Add _source first if present
+    if (hasSourceColumn) {
+      inferredSchema.push({
+        id: '_source',
+        label: 'Source (Dataset)',
+        type: 'string',
+        role: 'dimension',
+      })
+    }
+
+    for (const [key, value] of Object.entries(firstRow)) {
+      if (key === '_source') continue
+
+      let type: ColumnSchema['type'] = 'string'
+      let role: ColumnSchema['role'] = 'dimension'
+
+      if (typeof value === 'number') {
+        type = 'number'
+        role = 'metric'
+      } else if (typeof value === 'boolean') {
+        type = 'boolean'
+      } else if (
+        value !== null &&
+        value !== undefined &&
+        isDateString(String(value))
+      ) {
+        type = 'date'
+      }
+
+      inferredSchema.push({
+        id: key,
+        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+        type,
+        role,
+      })
+    }
+
+    return inferredSchema
+  }, [data, schema])
+
+  const chartType = config.chartType
+
+  if (chartData.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
         No data available
       </div>
     )
   }
-
-  const chartType = config.chartType
 
   // Handle KPI type separately (doesn't need processed data)
   if (chartType === 'kpi') {
@@ -264,7 +260,7 @@ export function ChartRenderer({
 
       const lineChart = (
         <ResponsiveContainer width="100%" height={height}>
-          <LineChart data={processedData} margin={{ bottom: 20 }}>
+          <LineChart data={chartData} margin={{ bottom: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
@@ -273,11 +269,11 @@ export function ChartRenderer({
               dataKey="name"
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
-              tickLine={false}
-              interval={0}
-              angle={processedData.length > 7 ? -45 : 0}
-              textAnchor={processedData.length > 7 ? 'end' : 'middle'}
-              height={processedData.length > 7 ? 60 : 30}
+              tickLine
+              interval={calculateOptimalInterval(chartData.length)}
+              angle={chartData.length > 7 ? -45 : 0}
+              textAnchor={chartData.length > 7 ? 'end' : 'middle'}
+              height={chartData.length > 7 ? 60 : 30}
             />
             <YAxis
               yAxisId="left"
@@ -305,19 +301,27 @@ export function ChartRenderer({
             {visibleDataKeys.map((key) => {
               const colorIndex = dataKeys.indexOf(key)
               const isRightAxis = lineYAxisRight.includes(key)
+              const lineColor = CHART_COLORS[colorIndex % CHART_COLORS.length]
               return (
                 <Line
                   key={key}
                   type="monotone"
                   dataKey={key}
-                  stroke={CHART_COLORS[colorIndex % CHART_COLORS.length]}
+                  stroke={lineColor}
                   strokeWidth={2}
-                  dot={{
-                    r: 3,
-                    fill: CHART_COLORS[colorIndex % CHART_COLORS.length],
-                  }}
-                  activeDot={{ r: 5 }}
+                  dot={
+                    chartData.length < DOT_THRESHOLD
+                      ? {
+                          r: 3,
+                          fill: lineColor,
+                        }
+                      : false
+                  }
+                  activeDot={
+                    chartData.length < DOT_THRESHOLD ? { r: 5 } : false
+                  }
                   yAxisId={isRightAxis ? 'right' : 'left'}
+                  isAnimationActive={chartData.length < ANIMATION_THRESHOLD}
                 />
               )
             })}
@@ -350,7 +354,7 @@ export function ChartRenderer({
       const barChart = (
         <ResponsiveContainer width="100%" height={height}>
           <BarChart
-            data={processedData}
+            data={chartData}
             layout={isHorizontal ? 'vertical' : 'horizontal'}
             margin={{ bottom: isHorizontal ? 5 : 20 }}
           >
@@ -358,51 +362,52 @@ export function ChartRenderer({
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
             />
-            {isHorizontal ? (
-              <>
-                <XAxis
-                  type="number"
-                  stroke="oklch(0.65 0.01 260)"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  stroke="oklch(0.65 0.01 260)"
-                  fontSize={11}
-                  tickLine={false}
-                  width={100}
-                />
-              </>
-            ) : (
-              <>
-                <XAxis
-                  dataKey="name"
-                  stroke="oklch(0.65 0.01 260)"
-                  fontSize={11}
-                  tickLine={false}
-                  interval={0}
-                  angle={processedData.length > 7 ? -45 : 0}
-                  textAnchor={processedData.length > 7 ? 'end' : 'middle'}
-                  height={processedData.length > 7 ? 60 : 30}
-                />
-                <YAxis
-                  yAxisId="left"
-                  stroke="oklch(0.65 0.01 260)"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                {barHasDualAxis && (
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    stroke="oklch(0.7 0.15 220)"
-                    fontSize={11}
-                    tickLine={false}
-                  />
-                )}
-              </>
+            {isHorizontal && (
+              <XAxis
+                type="number"
+                stroke="oklch(0.65 0.01 260)"
+                fontSize={11}
+                tickLine={false}
+              />
+            )}
+            {isHorizontal && (
+              <YAxis
+                type="category"
+                dataKey="name"
+                stroke="oklch(0.65 0.01 260)"
+                fontSize={11}
+                tickLine={false}
+                width={100}
+              />
+            )}
+            {!isHorizontal && (
+              <XAxis
+                dataKey="name"
+                stroke="oklch(0.65 0.01 260)"
+                fontSize={11}
+                tickLine
+                interval={calculateOptimalInterval(chartData.length)}
+                angle={chartData.length > 7 ? -45 : 0}
+                textAnchor={chartData.length > 7 ? 'end' : 'middle'}
+                height={chartData.length > 7 ? 60 : 30}
+              />
+            )}
+            {!isHorizontal && (
+              <YAxis
+                yAxisId="left"
+                stroke="oklch(0.65 0.01 260)"
+                fontSize={11}
+                tickLine={false}
+              />
+            )}
+            {!isHorizontal && barHasDualAxis && (
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                stroke="oklch(0.7 0.15 220)"
+                fontSize={11}
+                tickLine={false}
+              />
             )}
             <Tooltip
               contentStyle={{
@@ -426,6 +431,7 @@ export function ChartRenderer({
                   yAxisId={
                     isHorizontal ? undefined : isRightAxis ? 'right' : 'left'
                   }
+                  isAnimationActive={chartData.length < ANIMATION_THRESHOLD}
                 >
                   {showDataLabels && (
                     <LabelList
@@ -467,7 +473,7 @@ export function ChartRenderer({
 
       const areaChart = (
         <ResponsiveContainer width="100%" height={height}>
-          <AreaChart data={processedData} margin={{ bottom: 20 }}>
+          <AreaChart data={chartData} margin={{ bottom: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="oklch(0.28 0.01 260)"
@@ -477,10 +483,10 @@ export function ChartRenderer({
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
               tickLine={false}
-              interval={0}
-              angle={processedData.length > 7 ? -45 : 0}
-              textAnchor={processedData.length > 7 ? 'end' : 'middle'}
-              height={processedData.length > 7 ? 60 : 30}
+              interval={calculateOptimalInterval(chartData.length)}
+              angle={chartData.length > 7 ? -45 : 0}
+              textAnchor={chartData.length > 7 ? 'end' : 'middle'}
+              height={chartData.length > 7 ? 60 : 30}
             />
             <YAxis
               yAxisId="left"
@@ -517,6 +523,7 @@ export function ChartRenderer({
                   fill={CHART_COLORS[colorIndex % CHART_COLORS.length]}
                   fillOpacity={0.3}
                   yAxisId={isRightAxis ? 'right' : 'left'}
+                  isAnimationActive={chartData.length < ANIMATION_THRESHOLD}
                 />
               )
             })}
@@ -545,12 +552,12 @@ export function ChartRenderer({
       const isDonut = innerRadius > 0
 
       // For pie charts, filter data by hidden keys (name-based)
-      const filteredPieData = processedData.filter(
+      const filteredPieData = chartData.filter(
         (d) => !hiddenKeys.has(String(d.name))
       )
 
       // Build legend items from pie slices (name-based, not dataKey-based)
-      const pieLegendItems = processedData.map((d, i) => ({
+      const pieLegendItems = chartData.map((d, i) => ({
         key: String(d.name),
         color: CHART_COLORS[i % CHART_COLORS.length],
       }))
@@ -573,7 +580,7 @@ export function ChartRenderer({
             >
               {filteredPieData.map((d) => {
                 // Find original index to keep color consistent
-                const originalIndex = processedData.findIndex(
+                const originalIndex = chartData.findIndex(
                   (orig) => orig.name === d.name
                 )
                 return (
@@ -596,7 +603,7 @@ export function ChartRenderer({
         </ResponsiveContainer>
       )
 
-      if (processedData.length <= LEGEND_THRESHOLD) return pieChart
+      if (chartData.length <= LEGEND_THRESHOLD) return pieChart
 
       return (
         <div className="flex h-full">
@@ -609,7 +616,7 @@ export function ChartRenderer({
               if (visible) {
                 setHiddenKeys(new Set())
               } else {
-                setHiddenKeys(new Set(processedData.map((d) => String(d.name))))
+                setHiddenKeys(new Set(chartData.map((d) => String(d.name))))
               }
             }}
           />
@@ -632,6 +639,7 @@ export function ChartRenderer({
               name={config.xAxis}
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
+              interval={calculateOptimalInterval(chartData.length)}
               tickLine={false}
             />
             <YAxis
@@ -640,6 +648,7 @@ export function ChartRenderer({
               name={config.yAxis[0]}
               stroke="oklch(0.65 0.01 260)"
               fontSize={11}
+              interval={calculateOptimalInterval(chartData.length)}
               tickLine={false}
             />
             <Tooltip
@@ -653,7 +662,7 @@ export function ChartRenderer({
             />
             <Scatter
               name={config.yAxis[0]}
-              data={processedData}
+              data={chartData}
               fill={CHART_COLORS[0]}
             />
           </ScatterChart>
@@ -662,41 +671,13 @@ export function ChartRenderer({
     }
 
     case 'table':
-      // Render data as a simple table
-      const tableColumns =
-        config.yAxis.length > 0
-          ? [config.xAxis, ...config.yAxis]
-          : Object.keys(data[0] || {})
-
       return (
-        <div className="h-full overflow-auto">
-          <Table>
-            <TableHeader className="sticky top-0 bg-card z-10">
-              <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col} className="whitespace-nowrap text-xs">
-                    {col}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((row, rowIndex) => (
-                <TableRow key={rowIndex} className="hover:bg-muted/30">
-                  {tableColumns.map((col) => (
-                    <TableCell key={col} className="py-1.5 text-xs">
-                      {typeof row[col] === 'number'
-                        ? new Intl.NumberFormat('en-US', {
-                            maximumFractionDigits: 2,
-                          }).format(row[col] as number)
-                        : String(row[col] ?? '—')}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable
+          data={data}
+          schema={tableSchema}
+          height={typeof height === 'string' ? height : `${height}px`}
+          className="h-full"
+        />
       )
 
     default:

@@ -19,7 +19,7 @@ import {
   Database,
 } from 'lucide-react'
 import { ChartRenderer } from './chart-renderer'
-import { usePanelChartData, chartConfigToQueryConfig } from '@dataforge/query-hooks'
+import { usePanelChartData } from '@dataforge/query-hooks'
 
 interface DashboardPanelComponentProps {
   panel: DashboardPanelWithDataset
@@ -130,13 +130,14 @@ export function DashboardPanelComponent({
   const error = queryError
     ? 'Failed to load data'
     : !effectiveConfig
-      ? 'Invalid chart configuration'
-      : null
+    ? 'Invalid chart configuration'
+    : null
 
   // Build dataset display name
   const datasetDisplayName = useMemo(() => {
     if (!isMultiDataset) return dataset.name
-    const count = panel.config.datasetIds?.length || panel.datasetIds?.length || 1
+    const count =
+      panel.config.datasetIds?.length || panel.datasetIds?.length || 1
     return `${dataset.name} + ${count - 1} more`
   }, [dataset.name, isMultiDataset, panel.config.datasetIds, panel.datasetIds])
 
@@ -204,6 +205,7 @@ export function DashboardPanelComponent({
             config={panel.config}
             height="100%"
             showDataLabels={panel.config.showDataLabels}
+            schema={dataset.canonicalSchema || undefined}
           />
         )}
       </CardContent>
