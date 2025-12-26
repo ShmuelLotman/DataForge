@@ -8,6 +8,9 @@ import type {
   BlendMode,
   NormalizationMode,
   DerivedColumnType,
+  TableConfig,
+  TableColumnConfig,
+  AggregationType,
 } from '@/lib/types'
 import {
   Dialog,
@@ -38,6 +41,8 @@ import {
   Database,
   Table2,
   Hash,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -165,6 +170,17 @@ export function EditPanelDialog({
   )
   const [kpiLabel, setKpiLabel] = useState(panel.config.label || '')
 
+  // Table options
+  const [tableMode, setTableMode] = useState<'raw' | 'aggregated'>(
+    panel.config.tableConfig?.mode || 'raw'
+  )
+  const [tableColumns, setTableColumns] = useState<TableColumnConfig[]>(
+    panel.config.tableConfig?.columns || []
+  )
+  const [tableGroupBy, setTableGroupBy] = useState<string[]>(
+    panel.config.tableConfig?.groupBy || []
+  )
+
   // Fetch all datasets for the dropdown
   const { data: datasets = [], isLoading: datasetsLoading } = useDatasetsQuery(
     {},
@@ -217,6 +233,9 @@ export function EditPanelDialog({
       setNormalizeTo(panel.config.normalizeTo || 'none')
       setKpiFormat(panel.config.format || 'number')
       setKpiLabel(panel.config.label || '')
+      setTableMode(panel.config.tableConfig?.mode || 'raw')
+      setTableColumns(panel.config.tableConfig?.columns || [])
+      setTableGroupBy(panel.config.tableConfig?.groupBy || [])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, panel.id])
@@ -348,11 +367,40 @@ export function EditPanelDialog({
       toast.error('Please select at least one metric')
       return
     }
+    // Table requires at least one column
+    if (chartType === 'table' && tableColumns.length === 0) {
+      toast.error('Please select at least one column')
+      return
+    }
+    // Aggregated table requires at least one groupBy column
+    if (
+      chartType === 'table' &&
+      tableMode === 'aggregated' &&
+      tableGroupBy.length === 0
+    ) {
+      toast.error(
+        'Please select at least one grouping column for aggregated view'
+      )
+      return
+    }
+
+    // Build table config if chart type is table
+    const tableConfig: TableConfig | undefined =
+      chartType === 'table' && tableColumns.length > 0
+        ? {
+            mode: tableMode,
+            columns: tableColumns,
+            ...(tableMode === 'aggregated' && tableGroupBy.length > 0
+              ? { groupBy: tableGroupBy }
+              : {}),
+          }
+        : undefined
 
     const config: ChartConfig = {
       chartType,
-      xAxis: chartType === 'kpi' ? '_kpi' : xAxis,
-      yAxis,
+      xAxis:
+        chartType === 'kpi' ? '_kpi' : chartType === 'table' ? '_table' : xAxis,
+      yAxis: chartType === 'table' ? tableColumns.map((c) => c.id) : yAxis,
       groupBy: groupBy !== 'none' ? groupBy : null,
       // Derived X-axis (e.g., Day of Week from Date)
       ...(xAxisDerived &&
@@ -388,6 +436,8 @@ export function EditPanelDialog({
         label: kpiLabel || yAxis[0],
         aggregation: 'sum' as const,
       }),
+      // Table-specific options
+      ...(tableConfig && { tableConfig }),
     }
 
     const datasetIdChanged = selectedDatasetId !== panel.datasetId
@@ -426,7 +476,65 @@ export function EditPanelDialog({
     setShowDataLabels(false)
     setYAxisRight([])
     setNormalizeTo('none')
+    setTableMode('raw')
+    setTableColumns([])
+    setTableGroupBy([])
   }
+
+  // Table column helpers
+  const isTableType = chartType === 'table'
+
+  const toggleTableColumn = (columnId: string) => {
+    setTableColumns((prev) => {
+      const existing = prev.find((c) => c.id === columnId)
+      if (existing) {
+        return prev.filter((c) => c.id !== columnId)
+      }
+      return [...prev, { id: columnId }]
+    })
+    // Also remove from groupBy if deselecting
+    setTableGroupBy((prev) => prev.filter((id) => id !== columnId))
+  }
+
+  const toggleTableGroupBy = (columnId: string) => {
+    setTableGroupBy((prev) =>
+      prev.includes(columnId)
+        ? prev.filter((id) => id !== columnId)
+        : [...prev, columnId]
+    )
+  }
+
+  const updateTableColumnAggregation = (
+    columnId: string,
+    aggregation: AggregationType | undefined
+  ) => {
+    setTableColumns((prev) =>
+      prev.map((col) => (col.id === columnId ? { ...col, aggregation } : col))
+    )
+  }
+
+  const moveTableColumn = (columnId: string, direction: 'up' | 'down') => {
+    setTableColumns((prev) => {
+      const index = prev.findIndex((c) => c.id === columnId)
+      if (index === -1) return prev
+      const newIndex = direction === 'up' ? index - 1 : index + 1
+      if (newIndex < 0 || newIndex >= prev.length) return prev
+      const updated = [...prev]
+      const [removed] = updated.splice(index, 1)
+      updated.splice(newIndex, 0, removed)
+      return updated
+    })
+  }
+
+  // Get dimension and metric columns from schema for table configuration
+  const tableDimensionColumns = useMemo(
+    () => schemaWithSource.filter((c) => c.role === 'dimension'),
+    [schemaWithSource]
+  )
+  const tableMetricColumns = useMemo(
+    () => schemaWithSource.filter((c) => c.type === 'number'),
+    [schemaWithSource]
+  )
 
   const handleDatasetChange = (datasetId: string) => {
     setSelectedDatasetId(datasetId)
@@ -439,6 +547,8 @@ export function EditPanelDialog({
     setSortByColumn('none')
     setYAxisRight([])
     setBlendedDatasetIds((prev) => prev.filter((id) => id !== datasetId))
+    setTableColumns([])
+    setTableGroupBy([])
   }
 
   return (
@@ -605,8 +715,8 @@ export function EditPanelDialog({
             </div>
           </div>
 
-          {/* X-Axis (hidden for KPI) */}
-          {!isKpiType && (
+          {/* X-Axis (hidden for KPI and Table) */}
+          {!isKpiType && !isTableType && (
             <div className="space-y-2">
               <Label>X-Axis (Category)</Label>
               <Select
@@ -664,78 +774,83 @@ export function EditPanelDialog({
           )}
 
           {/* Source Date Column (when derived X-axis is selected) */}
-          {!isKpiType && xAxisDerived && dateColumns.length > 1 && (
-            <div className="space-y-2">
-              <Label>Source Date Column</Label>
-              <Select
-                value={xAxisSourceColumn}
-                onValueChange={setXAxisSourceColumn}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select date column..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {dateColumns.map((col) => (
-                    <SelectItem key={col.id} value={col.id}>
-                      {col.label || col.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                The date column to compute {xAxisDerived.replace(/_/g, ' ')}{' '}
-                from
-              </p>
-            </div>
-          )}
-
-          {/* Y-Axis (Metrics) - for KPI, only allow single selection */}
-          <div className="space-y-2">
-            <Label>
-              {isKpiType ? 'Metric to Display' : 'Y-Axis (Metrics)'}
-            </Label>
-            {isKpiType ? (
-              <Select
-                value={yAxis[0] || ''}
-                onValueChange={(val) => setYAxis([val])}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select metric..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {yOptions.map((col) => (
-                    <SelectItem key={col.id} value={col.id}>
-                      {col.label || col.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-secondary/10">
-                {yOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No numeric columns available
-                  </p>
-                ) : (
-                  yOptions.map((col) => (
-                    <div key={col.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`y-edit-${col.id}`}
-                        checked={yAxis.includes(col.id)}
-                        onCheckedChange={() => toggleYAxis(col.id)}
-                      />
-                      <label
-                        htmlFor={`y-edit-${col.id}`}
-                        className="text-sm cursor-pointer flex-1"
-                      >
+          {!isKpiType &&
+            !isTableType &&
+            xAxisDerived &&
+            dateColumns.length > 1 && (
+              <div className="space-y-2">
+                <Label>Source Date Column</Label>
+                <Select
+                  value={xAxisSourceColumn}
+                  onValueChange={setXAxisSourceColumn}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select date column..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dateColumns.map((col) => (
+                      <SelectItem key={col.id} value={col.id}>
                         {col.label || col.id}
-                      </label>
-                    </div>
-                  ))
-                )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  The date column to compute {xAxisDerived.replace(/_/g, ' ')}{' '}
+                  from
+                </p>
               </div>
             )}
-          </div>
+
+          {/* Y-Axis (Metrics) - hidden for Table, single select for KPI */}
+          {!isTableType && (
+            <div className="space-y-2">
+              <Label>
+                {isKpiType ? 'Metric to Display' : 'Y-Axis (Metrics)'}
+              </Label>
+              {isKpiType ? (
+                <Select
+                  value={yAxis[0] || ''}
+                  onValueChange={(val) => setYAxis([val])}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select metric..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yOptions.map((col) => (
+                      <SelectItem key={col.id} value={col.id}>
+                        {col.label || col.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-secondary/10">
+                  {yOptions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No numeric columns available
+                    </p>
+                  ) : (
+                    yOptions.map((col) => (
+                      <div key={col.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`y-edit-${col.id}`}
+                          checked={yAxis.includes(col.id)}
+                          onCheckedChange={() => toggleYAxis(col.id)}
+                        />
+                        <label
+                          htmlFor={`y-edit-${col.id}`}
+                          className="text-sm cursor-pointer flex-1"
+                        >
+                          {col.label || col.id}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* KPI Options */}
           {isKpiType && (
@@ -775,6 +890,225 @@ export function EditPanelDialog({
               <p className="text-xs text-muted-foreground">
                 KPI displays a single aggregated value (sum) with optional
                 formatting
+              </p>
+            </div>
+          )}
+
+          {/* Table Configuration */}
+          {isTableType && (
+            <div className="space-y-4 p-4 border rounded-lg bg-secondary/10">
+              <div className="text-sm font-medium">Table Configuration</div>
+
+              {/* Mode Toggle */}
+              <div className="flex items-center gap-4">
+                <Label className="text-sm">Mode:</Label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editTableMode"
+                      value="raw"
+                      checked={tableMode === 'raw'}
+                      onChange={() => {
+                        setTableMode('raw')
+                        setTableGroupBy([])
+                      }}
+                      className="accent-primary"
+                    />
+                    Raw Data
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editTableMode"
+                      value="aggregated"
+                      checked={tableMode === 'aggregated'}
+                      onChange={() => setTableMode('aggregated')}
+                      className="accent-primary"
+                    />
+                    Aggregated Summary
+                  </label>
+                </div>
+              </div>
+
+              {/* Aggregated Mode: Grouping Columns */}
+              {tableMode === 'aggregated' && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Grouping Columns (Dimensions)
+                  </Label>
+                  <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-background">
+                    {tableDimensionColumns.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No dimension columns available
+                      </p>
+                    ) : (
+                      tableDimensionColumns.map((col) => (
+                        <div
+                          key={col.id}
+                          className="flex items-center space-x-2"
+                        >
+                          <Checkbox
+                            id={`edit-tbl-group-${col.id}`}
+                            checked={tableGroupBy.includes(col.id)}
+                            onCheckedChange={() => {
+                              toggleTableGroupBy(col.id)
+                              // Auto-add to columns if not already there
+                              if (!tableColumns.find((c) => c.id === col.id)) {
+                                setTableColumns((prev) => [
+                                  ...prev,
+                                  { id: col.id },
+                                ])
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`edit-tbl-group-${col.id}`}
+                            className="text-sm cursor-pointer flex-1"
+                          >
+                            {col.label || col.id}
+                          </label>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Columns to Display */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  {tableMode === 'aggregated'
+                    ? 'Value Columns (Metrics)'
+                    : 'Columns to Display'}
+                </Label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2 bg-background">
+                  {schemaWithSource.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No columns available
+                    </p>
+                  ) : tableMode === 'aggregated' ? (
+                    // In aggregated mode, show metrics with aggregation picker
+                    tableMetricColumns.map((col) => {
+                      const isSelected = tableColumns.some(
+                        (c) => c.id === col.id
+                      )
+                      const columnConfig = tableColumns.find(
+                        (c) => c.id === col.id
+                      )
+                      return (
+                        <div
+                          key={col.id}
+                          className="flex items-center space-x-2"
+                        >
+                          <Checkbox
+                            id={`edit-tbl-col-${col.id}`}
+                            checked={isSelected}
+                            onCheckedChange={() => toggleTableColumn(col.id)}
+                          />
+                          <label
+                            htmlFor={`edit-tbl-col-${col.id}`}
+                            className="text-sm cursor-pointer flex-1"
+                          >
+                            {col.label || col.id}
+                          </label>
+                          {isSelected && (
+                            <Select
+                              value={columnConfig?.aggregation || 'sum'}
+                              onValueChange={(val) =>
+                                updateTableColumnAggregation(
+                                  col.id,
+                                  val as AggregationType
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-7 w-24">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sum">SUM</SelectItem>
+                                <SelectItem value="avg">AVG</SelectItem>
+                                <SelectItem value="count">COUNT</SelectItem>
+                                <SelectItem value="min">MIN</SelectItem>
+                                <SelectItem value="max">MAX</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      )
+                    })
+                  ) : (
+                    // In raw mode, show all columns with reorder controls
+                    schemaWithSource.map((col) => {
+                      const isSelected = tableColumns.some(
+                        (c) => c.id === col.id
+                      )
+                      const colIndex = tableColumns.findIndex(
+                        (c) => c.id === col.id
+                      )
+                      return (
+                        <div
+                          key={col.id}
+                          className="flex items-center space-x-2"
+                        >
+                          <Checkbox
+                            id={`edit-tbl-raw-${col.id}`}
+                            checked={isSelected}
+                            onCheckedChange={() => toggleTableColumn(col.id)}
+                          />
+                          <label
+                            htmlFor={`edit-tbl-raw-${col.id}`}
+                            className="text-sm cursor-pointer flex-1"
+                          >
+                            {col.label || col.id}
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              ({col.type})
+                            </span>
+                          </label>
+                          {isSelected && (
+                            <div className="flex items-center gap-0.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => moveTableColumn(col.id, 'up')}
+                                disabled={colIndex === 0}
+                                aria-label="Move column up"
+                              >
+                                <ChevronUp className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => moveTableColumn(col.id, 'down')}
+                                disabled={colIndex === tableColumns.length - 1}
+                                aria-label="Move column down"
+                              >
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Selected columns order (for raw mode) */}
+              {tableMode === 'raw' && tableColumns.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Column order: {tableColumns.map((c) => c.id).join(', ')}
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                {tableMode === 'aggregated'
+                  ? 'Groups data by selected dimensions and aggregates metrics.'
+                  : 'Displays raw data rows with selected columns.'}
               </p>
             </div>
           )}
@@ -1011,7 +1345,11 @@ export function EditPanelDialog({
               updatePanelMutation.isPending ||
               !title.trim() ||
               (!['table', 'kpi'].includes(chartType) && !xAxis) ||
-              (chartType !== 'table' && yAxis.length === 0)
+              (chartType !== 'table' && yAxis.length === 0) ||
+              (chartType === 'table' && tableColumns.length === 0) ||
+              (chartType === 'table' &&
+                tableMode === 'aggregated' &&
+                tableGroupBy.length === 0)
             }
           >
             {updatePanelMutation.isPending ? (

@@ -85,11 +85,17 @@ export function DashboardPanelComponent({
   // Build the effective config with merged filters
   // This preserves all multi-dataset settings from the panel config
   const effectiveConfig = useMemo(() => {
-    // KPI charts don't require an x-axis, just a y-axis metric
+    // KPI and Table charts don't require an x-axis
     const isKpi = panel.config.chartType === 'kpi'
-    const hasValidXAxis = isKpi || !!panel.config.xAxis
+    const isTable = panel.config.chartType === 'table'
+    const hasValidXAxis = isKpi || isTable || !!panel.config.xAxis
 
-    if (!hasValidXAxis || panel.config.yAxis.length === 0) {
+    // Tables with tableConfig don't need yAxis (columns come from tableConfig)
+    const hasValidYAxis = isTable
+      ? (panel.config.tableConfig?.columns?.length ?? 0) > 0
+      : panel.config.yAxis.length > 0
+
+    if (!hasValidXAxis || !hasValidYAxis) {
       return null
     }
 

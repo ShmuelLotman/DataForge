@@ -8,10 +8,11 @@ import type {
   DerivedColumnType,
   BlendMode,
   NormalizationMode,
+  TableConfig,
 } from '@dataforge/types'
 
-// Re-export DerivedColumnType for backwards compatibility
-export type { DerivedColumnType }
+// Re-export types for backwards compatibility
+export type { DerivedColumnType, TableConfig }
 
 // ============================================
 // TYPES
@@ -106,6 +107,13 @@ export function chartConfigToQueryConfig(
   options?: { transformForChart?: boolean }
 ): ChartQueryConfig {
   if (!config) return { x: { column: '_unused' }, y: [] }
+
+  // Table charts use special query config
+  if (config.chartType === 'table' && config.tableConfig) {
+    const tableQueryConfig = chartConfigToTableQueryConfig(config, options)
+    if (tableQueryConfig) return tableQueryConfig
+  }
+
   // KPI charts use aggregateOnly mode - no grouping, just total aggregation
   const isKpi = config.chartType === 'kpi'
 
@@ -134,6 +142,91 @@ export function chartConfigToQueryConfig(
     aggregateOnly: isKpi ? true : undefined,
     // Server-side chart transformation (default to true for non-KPI charts)
     transformForChart: options?.transformForChart ?? !isKpi,
+  }
+}
+
+/**
+ * Convert TableConfig to query API format
+ *
+ * @param tableConfig - Table configuration
+ * @param options - Additional options for the query
+ *
+ * For raw mode: Returns query with no aggregation, just column selection
+ * For aggregated mode: Groups by dimension columns, aggregates metrics
+ */
+export function chartConfigToTableQueryConfig(
+  chartConfig: ChartConfig,
+  options?: { transformForChart?: boolean }
+): ChartQueryConfig | null {
+  const tableConfig = chartConfig.tableConfig
+  if (!tableConfig || tableConfig.columns.length === 0) return null
+
+  const isAggregated = tableConfig.mode === 'aggregated'
+
+  if (isAggregated) {
+    // Aggregated mode: group by dimension columns, aggregate metrics
+    const groupByColumns = tableConfig.groupBy || []
+    const metricColumns = tableConfig.columns.filter(
+      (col) => !groupByColumns.includes(col.id)
+    )
+
+    // If no dimensions to group by, fall back to raw mode behavior
+    if (groupByColumns.length === 0) {
+      // No grouping - return all selected columns without aggregation
+      const allColumns = tableConfig.columns
+      return {
+        x: { column: allColumns[0].id },
+        y: allColumns.map((col) => ({
+          column: col.id,
+          aggregation: undefined,
+        })),
+        transformForChart: false, // Tables don't need chart transformation
+      }
+    }
+
+    // Use first groupBy column as x-axis, rest as additional groupBy
+    const xColumn = groupByColumns[0]
+    const additionalGroupBy = groupByColumns.slice(1)
+
+    // Ensure we have at least one metric column
+    // If no metrics selected, include the groupBy columns in y for display
+    const yColumns =
+      metricColumns.length > 0
+        ? metricColumns.map((col) => ({
+            column: col.id,
+            aggregation: col.aggregation || 'sum',
+          }))
+        : groupByColumns.map((col) => ({
+            column: col,
+            aggregation: undefined,
+          }))
+
+    return {
+      x: { column: xColumn },
+      y: yColumns,
+      groupBy: additionalGroupBy.length > 0 ? additionalGroupBy[0] : undefined,
+      filters: chartConfig.filters,
+      limit: chartConfig.limit,
+      sortBy: chartConfig.sortBy,
+      transformForChart: false, // Tables don't need chart transformation
+    }
+  }
+
+  // Raw mode: no aggregation, just column selection
+  // We'll select all columns and let the backend handle it
+  // Note: We include ALL columns in y to ensure they're all fetched
+  // (x is just used as the primary key for the query structure)
+  const allColumns = tableConfig.columns
+  return {
+    x: { column: allColumns[0].id },
+    y: allColumns.map((col) => ({
+      column: col.id,
+      aggregation: undefined, // No aggregation in raw mode
+    })),
+    filters: chartConfig.filters,
+    limit: chartConfig.limit,
+    sortBy: chartConfig.sortBy,
+    transformForChart: false, // Tables don't need chart transformation
   }
 }
 
@@ -281,11 +374,15 @@ export function chartConfigToBlendedConfig(
   config: ChartConfig,
   options?: { transformForChart?: boolean }
 ): BlendedQueryConfig {
+  const queryConfig = chartConfigToQueryConfig(config)
   return {
-    ...chartConfigToQueryConfig(config),
+    ...queryConfig,
     blendMode: config?.blendMode ?? 'aggregate',
     normalizeTo: config?.normalizeTo,
-    transformForChart: options?.transformForChart ?? true, // Default to server-side transformation
+    // Respect transformForChart from queryConfig (table sets it to false)
+    // Only override if explicitly provided in options
+    transformForChart:
+      options?.transformForChart ?? queryConfig.transformForChart ?? true,
   }
 }
 
@@ -374,7 +471,8 @@ export function useBlendedChartDataQuery(
           ...(config.limit && { limit: config.limit }),
           ...(config.sortBy && { sortBy: config.sortBy }),
           // Request server-side chart transformation
-          transformForChart: config.transformForChart ?? true,
+          // Respect the value from BlendedQueryConfig (tables set this to false)
+          transformForChart: config.transformForChart,
         },
       }
 

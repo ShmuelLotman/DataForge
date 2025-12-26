@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import type { ColumnSchema, ChartFilter } from '@/lib/types'
+import type { ColumnSchema, ChartFilter, TableConfig, TableColumnConfig } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -42,6 +42,8 @@ interface DataTableProps {
   data: Record<string, unknown>[]
   /** Schema for column definitions */
   schema: ColumnSchema[]
+  /** Table configuration with format hints (optional) */
+  tableConfig?: TableConfig
   /** Total row count (for pagination) */
   totalRows?: number
   /** Current page (0-indexed) */
@@ -76,12 +78,60 @@ type SortDirection = 'asc' | 'desc' | null
 // FORMATTERS
 // ============================================
 
+type FormatHint = 'number' | 'currency' | 'percent' | 'date' | 'text'
+
 function formatCellValue(
   value: unknown,
-  type: ColumnSchema['type']
+  type: ColumnSchema['type'],
+  formatHint?: FormatHint
 ): string {
   if (value === null || value === undefined) return '—'
 
+  // Apply format hint if provided
+  if (formatHint) {
+    switch (formatHint) {
+      case 'currency':
+        const currencyNum = Number(value)
+        if (isNaN(currencyNum)) return String(value)
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(currencyNum)
+
+      case 'percent':
+        const percentNum = Number(value)
+        if (isNaN(percentNum)) return String(value)
+        return new Intl.NumberFormat('en-US', {
+          style: 'percent',
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }).format(percentNum / 100)
+
+      case 'date':
+        const dateStr = String(value)
+        const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return dateStr
+        return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        })
+
+      case 'number':
+        const num = Number(value)
+        if (isNaN(num)) return String(value)
+        return new Intl.NumberFormat('en-US', {
+          maximumFractionDigits: 2,
+        }).format(num)
+
+      case 'text':
+        return String(value)
+    }
+  }
+
+  // Fall back to type-based formatting
   switch (type) {
     case 'number':
       const num = Number(value)
@@ -92,7 +142,6 @@ function formatCellValue(
 
     case 'date':
       const dateStr = String(value)
-      // Try to parse and format
       const date = new Date(dateStr)
       if (isNaN(date.getTime())) return dateStr
       return date.toLocaleDateString('en-US', {
@@ -116,6 +165,7 @@ function formatCellValue(
 export function DataTable({
   data,
   schema,
+  tableConfig,
   totalRows,
   page = 0,
   pageSize = 25,
@@ -130,6 +180,18 @@ export function DataTable({
   height = 400,
   className,
 }: DataTableProps) {
+  // Build a map of column id -> format hint from tableConfig
+  const formatHints = useMemo(() => {
+    const hints = new Map<string, FormatHint>()
+    if (tableConfig?.columns) {
+      for (const col of tableConfig.columns) {
+        if (col.format) {
+          hints.set(col.id, col.format)
+        }
+      }
+    }
+    return hints
+  }, [tableConfig])
   const [searchQuery, setSearchQuery] = useState('')
   const [localSort, setLocalSort] = useState<{
     column: string | null
@@ -321,17 +383,23 @@ export function DataTable({
               ) : (
                 processedData.map((row, rowIndex) => (
                   <TableRow key={rowIndex} className="hover:bg-muted/30">
-                    {schema.map((col) => (
-                      <TableCell
-                        key={col.id}
-                        className={cn(
-                          'py-2',
-                          col.type === 'number' && 'text-right font-mono'
-                        )}
-                      >
-                        {formatCellValue(row[col.id], col.type)}
-                      </TableCell>
-                    ))}
+                    {schema.map((col) => {
+                      const formatHint = formatHints.get(col.id)
+                      const isCurrency = formatHint === 'currency'
+                      const isPercent = formatHint === 'percent'
+                      return (
+                        <TableCell
+                          key={col.id}
+                          className={cn(
+                            'py-2',
+                            (col.type === 'number' || isCurrency || isPercent) &&
+                              'text-right font-mono'
+                          )}
+                        >
+                          {formatCellValue(row[col.id], col.type, formatHint)}
+                        </TableCell>
+                      )
+                    })}
                   </TableRow>
                 ))
               )}

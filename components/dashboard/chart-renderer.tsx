@@ -163,12 +163,71 @@ export function ChartRenderer({
   const shouldShowLegend = showLegend ?? dataKeys.length > LEGEND_THRESHOLD
 
   // Build table schema for table view
-  // Infer from data or use provided schema
+  // Priority: tableConfig > provided schema > inferred from data
   const tableSchema = useMemo(() => {
     if (data.length === 0) return []
 
     const allKeys = new Set(Object.keys(data[0] || {}))
     const hasSourceColumn = allKeys.has('_source')
+    const tableConfig = config.tableConfig
+
+    // If tableConfig is provided, build schema from it (respecting column order)
+    if (tableConfig && tableConfig.columns.length > 0) {
+      const schemaFromConfig: ColumnSchema[] = []
+
+      // Add _source first if present in data
+      if (hasSourceColumn) {
+        schemaFromConfig.push({
+          id: '_source',
+          label: 'Source (Dataset)',
+          type: 'string',
+          role: 'dimension',
+        })
+      }
+
+      for (const colConfig of tableConfig.columns) {
+        if (!allKeys.has(colConfig.id)) continue
+        if (colConfig.id === '_source') continue // Already added
+
+        // Find in provided schema for type info, or infer
+        const schemaCol = schema?.find((s) => s.id === colConfig.id)
+        const sampleValue = data[0][colConfig.id]
+
+        let type: ColumnSchema['type'] = schemaCol?.type || 'string'
+        let role: ColumnSchema['role'] = schemaCol?.role || 'dimension'
+
+        // Infer if not in schema
+        if (!schemaCol) {
+          if (typeof sampleValue === 'number') {
+            type = 'number'
+            role = 'metric'
+          } else if (typeof sampleValue === 'boolean') {
+            type = 'boolean'
+          } else if (
+            sampleValue !== null &&
+            sampleValue !== undefined &&
+            isDateString(String(sampleValue))
+          ) {
+            type = 'date'
+          }
+        }
+
+        schemaFromConfig.push({
+          id: colConfig.id,
+          label:
+            schemaCol?.label ||
+            colConfig.id.charAt(0).toUpperCase() +
+              colConfig.id.slice(1).replace(/_/g, ' '),
+          type,
+          role,
+        })
+      }
+
+      // If no columns matched from tableConfig, fall through to infer from data
+      if (schemaFromConfig.length > 0) {
+        return schemaFromConfig
+      }
+    }
 
     // Use provided schema if available, filter to existing columns
     if (schema && schema.length > 0) {
@@ -231,7 +290,7 @@ export function ChartRenderer({
     }
 
     return inferredSchema
-  }, [data, schema])
+  }, [data, schema, config.tableConfig])
 
   const chartType = config.chartType
 
@@ -675,6 +734,7 @@ export function ChartRenderer({
         <DataTable
           data={data}
           schema={tableSchema}
+          tableConfig={config.tableConfig}
           height={typeof height === 'string' ? height : `${height}px`}
           className="h-full"
         />

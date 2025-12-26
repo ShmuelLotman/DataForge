@@ -72,6 +72,40 @@ export type AggregationType =
   | 'max'
 export type BucketType = 'day' | 'week' | 'month'
 
+// ============================================
+// TABLE CONFIGURATION
+// ============================================
+
+/**
+ * Format hints for table columns
+ */
+export type TableColumnFormat = 'number' | 'currency' | 'percent' | 'date' | 'text'
+
+/**
+ * Configuration for a single table column
+ */
+export interface TableColumnConfig {
+  /** Column ID from schema */
+  id: string
+  /** Aggregation type (only for metrics in aggregated mode) */
+  aggregation?: AggregationType
+  /** Display format hint */
+  format?: TableColumnFormat
+}
+
+/**
+ * Table-specific configuration for flexible table views
+ * Supports both raw data views and aggregated summary tables
+ */
+export interface TableConfig {
+  /** Table mode: 'raw' shows all rows, 'aggregated' groups by dimensions */
+  mode: 'raw' | 'aggregated'
+  /** Columns to display (order matters for display) */
+  columns: TableColumnConfig[]
+  /** For aggregated mode: dimension columns to group by */
+  groupBy?: string[]
+}
+
 // Derived column types that can be computed from date columns at query time
 export type DerivedColumnType =
   | 'day_of_week' // 0-6 (Sunday=0)
@@ -184,6 +218,12 @@ export interface ChartConfig {
   yAxisRight?: string[] // Metrics to plot on right axis
   // Data labels on bars/segments
   showDataLabels?: boolean // Display values on chart elements
+
+  // ============================================
+  // Table-specific configuration
+  // ============================================
+  /** Table configuration (only used when chartType === 'table') */
+  tableConfig?: TableConfig
 
   // ============================================
   // Multi-dataset blending options
@@ -370,6 +410,8 @@ export interface AIChartConfig {
   datasetIds?: string[]
   blendMode?: BlendMode
   normalizeTo?: NormalizationMode
+  // Table configuration
+  tableConfig?: TableConfig
 }
 
 // Context retrieved via RAG
